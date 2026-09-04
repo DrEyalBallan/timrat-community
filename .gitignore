@@ -1,6 +1,8 @@
+node_modules
 node_modules/
+.bin
 .bin/
-.next/
+.next
 out/
 build/
 .DS_Store
