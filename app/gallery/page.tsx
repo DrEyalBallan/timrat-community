@@ -456,12 +456,6 @@ export default function FullscreenGalleryPage() {
                 </button>
               )}
 
-              {/* Top Right: Timrat Logo Watermark Badge */}
-              <div className="gallery-top-right-logo">
-                <img src="/logo.jpeg" alt="תמרת" />
-                <span>קהילת תמרת</span>
-              </div>
-
               {/* Top Left: Back to upload button + Slide Counter Badge */}
               <div className="gallery-top-left-bar">
                 <a
