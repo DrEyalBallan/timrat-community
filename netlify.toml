@@ -7,3 +7,25 @@
 
 [build.environment]
   NODE_VERSION = "20"
+
+[[headers]]
+  for = "/admin*"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate, max-age=0"
+    Netlify-CDN-Cache-Control = "no-cache, no-store, must-revalidate, max-age=0"
+    CDN-Cache-Control = "no-cache, no-store, must-revalidate, max-age=0"
+    Pragma = "no-cache"
+    Expires = "0"
+
+[[headers]]
+  for = "/gallery*"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+    Netlify-CDN-Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate, max-age=0"
+    Netlify-CDN-Cache-Control = "no-cache, no-store, must-revalidate, max-age=0"
+    CDN-Cache-Control = "no-cache, no-store, must-revalidate, max-age=0"
