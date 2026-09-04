@@ -696,23 +696,18 @@ export default function UserGreetingPage() {
             paddingTop: '1.25rem',
             borderTop: '1px solid rgba(255, 255, 255, 0.12)',
             display: 'flex',
-            justifyContent: 'space-between',
+            justifyContent: 'center',
             alignItems: 'center',
-            fontSize: '0.9rem',
+            fontSize: '0.95rem',
             color: '#94a3b8',
           }}
         >
           <a
             href="/gallery"
-            style={{ color: '#4ade80', textDecoration: 'none', fontWeight: 700 }}
+            style={{ color: '#4ade80', textDecoration: 'none', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
-            📺 גלריית צפייה והקרנה בלייב
-          </a>
-          <a
-            href="/admin"
-            style={{ color: '#94a3b8', textDecoration: 'none' }}
-          >
-            🔒 ניהול אדמין
+            <span>📺</span>
+            <span>למעבר לגלריית הצפייה וההקרנה בלייב</span>
           </a>
         </div>
       </div>
