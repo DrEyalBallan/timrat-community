@@ -45,6 +45,14 @@ export default function AdminPage() {
   const [directUploadingUrl, setDirectUploadingUrl] = useState<string | null>(null);
   const [targetItemForDirectUpload, setTargetItemForDirectUpload] = useState<string | null>(null);
 
+  // Admin Custom Upload state
+  const [isCustomUploadOpen, setIsCustomUploadOpen] = useState(false);
+  const [adminCustomFile, setAdminCustomFile] = useState<File | null>(null);
+  const [adminCustomPreview, setAdminCustomPreview] = useState<string>('');
+  const [adminCustomName, setAdminCustomName] = useState<string>('קהילת תמרת');
+  const [adminCustomGreeting, setAdminCustomGreeting] = useState<string>('שנה טובה ומבורכת מקהילת תמרת!');
+  const [isAdminCustomUploading, setIsAdminCustomUploading] = useState<boolean>(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const settingsTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -287,6 +295,58 @@ export default function AdminPage() {
         standaloneVideoInputRef.current.value = '';
       }
       fetchImages(password);
+    }
+  };
+
+  const handleAdminCustomFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setAdminCustomFile(file);
+    const isVid = file.type.startsWith('video/') || !!file.name.match(/\.(mp4|mov|webm|ogg|m4v)$/i);
+    if (isVid) {
+      setAdminCustomPreview(URL.createObjectURL(file));
+    } else {
+      const reader = new FileReader();
+      reader.onload = () => setAdminCustomPreview(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleAdminCustomUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminCustomFile) {
+      alert('נא לבחור קובץ תמונה או סרטון');
+      return;
+    }
+    setIsAdminCustomUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', adminCustomFile);
+      const nameParts = adminCustomName.trim().split(' ');
+      formData.append('firstName', nameParts[0] || 'קהילת');
+      formData.append('lastName', nameParts.slice(1).join(' ') || 'תמרת');
+      formData.append('greeting', adminCustomGreeting || 'שנה טובה ומבורכת!');
+      formData.append('password', password);
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'העלאה נכשלה');
+      }
+
+      alert('✅ הקובץ והברכה הועלו בהצלחה למסך ההקרנה ולגלריה!');
+      setAdminCustomFile(null);
+      setAdminCustomPreview('');
+      setIsCustomUploadOpen(false);
+      fetchImages(password);
+    } catch (err: any) {
+      alert('⚠️ שגיאה: ' + (err?.message || 'ההעלאה נכשלה'));
+    } finally {
+      setIsAdminCustomUploading(false);
     }
   };
 
@@ -695,6 +755,169 @@ export default function AdminPage() {
         </div>
       </div>
 
+      {/* Prominent Admin Upload Section */}
+      <div
+        style={{
+          background: 'linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%)',
+          padding: '1.25rem 1.5rem',
+          borderRadius: '16px',
+          border: '2px solid #86efac',
+          marginBottom: '1.5rem',
+          boxShadow: '0 4px 15px rgba(22, 163, 74, 0.08)',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <h2 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#14532d', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+              <span>📤</span>
+              <span>העלאת תמונות וסרטונים חדשים למסך ההקרנה</span>
+            </h2>
+            <p style={{ color: '#475569', fontSize: '0.88rem', margin: '4px 0 0 0' }}>
+              העלו סרטוני וידאו (MP4, MOV) או תמונות (JPG, PNG, HEIC) שיוצגו מיד על מסך ההקרנה ביישוב.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+            <label
+              className="btn-primary"
+              style={{
+                cursor: 'pointer',
+                padding: '9px 18px',
+                borderRadius: '10px',
+                fontSize: '0.95rem',
+                fontWeight: 700,
+                background: 'linear-gradient(135deg, #0284c7, #0369a1)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                boxShadow: '0 4px 12px rgba(2, 132, 199, 0.25)',
+              }}
+              title="לחצו לבחירת סרטון וידאו (MP4, MOV וכו') מהמכשיר"
+            >
+              <input
+                type="file"
+                accept="video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
+                style={{ display: 'none' }}
+                onChange={handleUploadStandaloneVideo}
+              />
+              <span>🎬</span>
+              <span>העלאת סרטון וידאו למסך</span>
+            </label>
+
+            <label
+              className="btn-primary"
+              style={{
+                cursor: 'pointer',
+                padding: '9px 18px',
+                borderRadius: '10px',
+                fontSize: '0.95rem',
+                fontWeight: 700,
+                background: 'linear-gradient(135deg, #16a34a, #15803d)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                boxShadow: '0 4px 12px rgba(22, 163, 74, 0.25)',
+              }}
+              title="לחצו לבחירת תמונות להעלאה"
+            >
+              <input
+                type="file"
+                accept="image/*,video/*,.mp4,.mov,.webm,.m4v"
+                multiple
+                style={{ display: 'none' }}
+                onChange={handleBulkUpload}
+              />
+              <span>📸</span>
+              <span>העלאת תמונות מהמכשיר</span>
+            </label>
+
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setIsCustomUploadOpen(!isCustomUploadOpen)}
+              style={{ padding: '9px 16px', borderRadius: '10px', fontSize: '0.9rem', fontWeight: 700 }}
+            >
+              {isCustomUploadOpen ? '✕ סגור טופס' : '✍️ העלאה עם ברכה אישית'}
+            </button>
+          </div>
+        </div>
+
+        {isBulkUploading && (
+          <div style={{ marginTop: '1rem', background: '#dcfce7', padding: '10px 14px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span className="loader" style={{ width: '18px', height: '18px', borderWidth: '2px' }} />
+            <span style={{ fontWeight: 700, color: '#166534', fontSize: '0.9rem' }}>
+              מעלה קובץ לענן... {uploadProgress.current}/{uploadProgress.total}
+            </span>
+          </div>
+        )}
+
+        {/* Custom Upload Form */}
+        {isCustomUploadOpen && (
+          <form onSubmit={handleAdminCustomUpload} style={{ marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid #cbd5e1' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '4px', color: '#1e293b' }}>
+                  שם המברך / שולח:
+                </label>
+                <input
+                  type="text"
+                  className="modern-input"
+                  value={adminCustomName}
+                  onChange={(e) => setAdminCustomName(e.target.value)}
+                  placeholder="לדוגמה: משפחת כהן או קהילת תמרת"
+                  style={{ padding: '8px 12px' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '4px', color: '#1e293b' }}>
+                  תוכן הברכה:
+                </label>
+                <input
+                  type="text"
+                  className="modern-input"
+                  value={adminCustomGreeting}
+                  onChange={(e) => setAdminCustomGreeting(e.target.value)}
+                  placeholder="שנה טובה ומבורכת!"
+                  style={{ padding: '8px 12px' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 700, marginBottom: '4px', color: '#1e293b' }}>
+                  בחירת קובץ (תמונה או סרטון):
+                </label>
+                <input
+                  type="file"
+                  accept="image/*,video/*,.mp4,.mov,.webm,.m4v"
+                  onChange={handleAdminCustomFileSelect}
+                  style={{ fontSize: '0.85rem', padding: '6px' }}
+                />
+              </div>
+            </div>
+
+            {adminCustomPreview && (
+              <div style={{ marginBottom: '1rem' }}>
+                {adminCustomFile?.type?.startsWith('video/') || !!adminCustomFile?.name?.match(/\.(mp4|mov|webm|ogg|m4v)$/i) ? (
+                  <video src={adminCustomPreview} controls style={{ maxHeight: '160px', borderRadius: '8px' }} />
+                ) : (
+                  <img src={adminCustomPreview} alt="תצוגה" style={{ maxHeight: '160px', borderRadius: '8px' }} />
+                )}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={isAdminCustomUploading || !adminCustomFile}
+              style={{ padding: '9px 24px', borderRadius: '10px', fontSize: '0.95rem', fontWeight: 700 }}
+            >
+              {isAdminCustomUploading ? 'מעלה לענן...' : '🚀 פרסם עכשיו למסך ההקרנה'}
+            </button>
+          </form>
+        )}
+      </div>
+
       {/* Filter, View Toggle & Batch Actions Bar */}
       <div
         style={{
@@ -1009,13 +1232,32 @@ export default function AdminPage() {
                             >
                               צפה
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => handleTriggerDirectVideoUpload(item.url)}
-                              style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', textDecoration: 'underline', fontWeight: 700, fontSize: '0.8rem' }}
+                            <label
+                              style={{
+                                cursor: 'pointer',
+                                textDecoration: 'underline',
+                                color: '#2563eb',
+                                fontWeight: 700,
+                                fontSize: '0.8rem',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                              }}
+                              title="החלפת סרטון AI קיים בסרטון חדש"
                             >
+                              <input
+                                type="file"
+                                accept="video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
+                                style={{ display: 'none' }}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    handleUploadAiVideo(item.url, file, '');
+                                    e.target.value = '';
+                                  }
+                                }}
+                              />
                               החלף
-                            </button>
+                            </label>
                             <button
                               type="button"
                               onClick={() => handleRemoveAiVideo(item.url)}
@@ -1026,16 +1268,14 @@ export default function AdminPage() {
                           </div>
                         </div>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleTriggerDirectVideoUpload(item.url)}
+                        <label
                           style={{
                             margin: '6px 0',
                             width: '100%',
                             background: 'linear-gradient(135deg, #fef3c7 0%, #ecfdf5 100%)',
                             border: '1.5px dashed #10b981',
                             borderRadius: '8px',
-                            padding: '7px 10px',
+                            padding: '8px 10px',
                             fontSize: '0.85rem',
                             fontWeight: 700,
                             color: '#047857',
@@ -1045,12 +1285,25 @@ export default function AdminPage() {
                             justifyContent: 'center',
                             gap: '6px',
                             boxShadow: '0 2px 6px rgba(16, 185, 129, 0.12)',
+                            boxSizing: 'border-box',
                           }}
                           title="לחצו לבחירת קובץ וידאו מהמחשב או הטלפון"
                         >
-                          <span style={{ fontSize: '1rem' }}>➕</span>
-                          <span>הוסף סרטון AI (העלאת קובץ)</span>
-                        </button>
+                          <input
+                            type="file"
+                            accept="video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
+                            style={{ display: 'none' }}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                handleUploadAiVideo(item.url, file, '');
+                                e.target.value = '';
+                              }
+                            }}
+                          />
+                          <span style={{ fontSize: '1rem' }}>🎬</span>
+                          <span>➕ העלאת סרטון AI (בחר קובץ מהמכשיר)</span>
+                        </label>
                       )}
 
                       <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
@@ -1171,15 +1424,26 @@ export default function AdminPage() {
                       >
                         🗑️ הסרת סרטון ה-AI
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => videoFileInputRef.current?.click()}
-                        disabled={isUploadingVideo}
+                      <label
                         className="btn-secondary"
-                        style={{ padding: '6px 12px', fontSize: '0.85rem' }}
+                        style={{ padding: '6px 12px', fontSize: '0.85rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}
+                        title="בחירת קובץ וידאו חדש מהמכשיר"
                       >
+                        <input
+                          type="file"
+                          accept="video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
+                          style={{ display: 'none' }}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              setSelectedVideoFile(file);
+                              handleUploadAiVideo(activeModalItem.url, file, '');
+                              e.target.value = '';
+                            }
+                          }}
+                        />
                         🔄 החלפת סרטון ה-AI
-                      </button>
+                      </label>
                     </div>
                   </div>
                 ) : (
@@ -1189,15 +1453,34 @@ export default function AdminPage() {
                     </p>
 
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
-                      <button
-                        type="button"
-                        onClick={() => videoFileInputRef.current?.click()}
-                        disabled={isUploadingVideo}
+                      <label
                         className="btn-primary"
-                        style={{ padding: '7px 14px', fontSize: '0.88rem', borderRadius: '10px' }}
+                        style={{
+                          padding: '7px 14px',
+                          fontSize: '0.88rem',
+                          borderRadius: '10px',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                        title="בחירת קובץ וידאו מהמחשב או הטלפון"
                       >
+                        <input
+                          type="file"
+                          accept="video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
+                          style={{ display: 'none' }}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              setSelectedVideoFile(file);
+                              handleUploadAiVideo(activeModalItem.url, file, '');
+                              e.target.value = '';
+                            }
+                          }}
+                        />
                         📁 בחירת קובץ וידאו מהמחשב/טלפון
-                      </button>
+                      </label>
 
                       <span style={{ alignSelf: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>או</span>
 
