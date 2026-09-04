@@ -180,7 +180,12 @@ export async function deleteGalleryItemByToken(url: string, token: string): Prom
   return true;
 }
 
-export async function getGalleryItemsByToken(token: string, additionalTokens?: string[]): Promise<GalleryItem[]> {
+export async function getGalleryItemsByToken(
+  token?: string,
+  additionalTokens?: string[],
+  nameFilter?: { firstName?: string; lastName?: string },
+  urlsFilter?: string[]
+): Promise<GalleryItem[]> {
   const items = await getGalleryItems();
   const tokenSet = new Set<string>();
   if (token && token.trim()) tokenSet.add(token.trim());
@@ -189,14 +194,62 @@ export async function getGalleryItemsByToken(token: string, additionalTokens?: s
       if (t && t.trim()) tokenSet.add(t.trim());
     });
   }
-  if (tokenSet.size === 0) return [];
-  return items.filter((item) => item.token && tokenSet.has(item.token));
+
+  const cleanFirst = nameFilter?.firstName?.trim().toLowerCase();
+  const cleanLast = nameFilter?.lastName?.trim().toLowerCase();
+  const hasName = Boolean(cleanFirst && cleanLast);
+  const requestedUrls = Array.isArray(urlsFilter) && urlsFilter.length > 0 ? new Set(urlsFilter) : null;
+
+  const matched: GalleryItem[] = [];
+  let shouldUpdateStore = false;
+
+  for (const item of items) {
+    let isMatch = false;
+
+    // 1. Match by token
+    if (item.token && tokenSet.has(item.token)) {
+      isMatch = true;
+    }
+
+    // 2. Match by URL if requested
+    if (requestedUrls && requestedUrls.has(item.url)) {
+      isMatch = true;
+    }
+
+    // 3. Match by full name if provided
+    if (hasName) {
+      const itemFirst = (item.firstName || '').trim().toLowerCase();
+      const itemLast = (item.lastName || '').trim().toLowerCase();
+      if (itemFirst === cleanFirst && itemLast === cleanLast) {
+        isMatch = true;
+      }
+    }
+
+    if (isMatch) {
+      matched.push(item);
+      // Adopt item to current user token if not assigned
+      if (token && (!item.token || item.token !== token)) {
+        item.token = token;
+        shouldUpdateStore = true;
+      }
+    }
+  }
+
+  if (shouldUpdateStore) {
+    try {
+      await saveGalleryItems(items);
+    } catch {}
+  }
+
+  return matched;
 }
 
 export async function deleteUserGalleryItems(options: {
   token?: string;
   tokens?: string[];
   urls?: string[];
+  firstName?: string;
+  lastName?: string;
   deleteAll?: boolean;
 }): Promise<string[]> {
   const items = await getGalleryItems();
@@ -208,19 +261,29 @@ export async function deleteUserGalleryItems(options: {
     });
   }
 
+  const cleanFirst = options.firstName?.trim().toLowerCase();
+  const cleanLast = options.lastName?.trim().toLowerCase();
+  const hasName = Boolean(cleanFirst && cleanLast);
   const requestedUrls = Array.isArray(options.urls) && options.urls.length > 0 ? new Set(options.urls) : null;
+
   const toDeleteUrls: string[] = [];
 
   for (const item of items) {
-    const hasMatchingToken = Boolean(item.token && validTokens.has(item.token));
-    const hasMatchingUrl = Boolean(requestedUrls && requestedUrls.has(item.url));
+    const matchesToken = Boolean(item.token && validTokens.has(item.token));
+    const matchesUrl = Boolean(requestedUrls && requestedUrls.has(item.url));
+    let matchesName = false;
+    if (hasName) {
+      const itemFirst = (item.firstName || '').trim().toLowerCase();
+      const itemLast = (item.lastName || '').trim().toLowerCase();
+      matchesName = Boolean(itemFirst === cleanFirst && itemLast === cleanLast);
+    }
 
     if (options.deleteAll) {
-      if (hasMatchingToken || (hasMatchingUrl && item.token && validTokens.has(item.token))) {
+      if (matchesToken || matchesUrl || matchesName) {
         toDeleteUrls.push(item.url);
       }
     } else {
-      if (hasMatchingUrl && hasMatchingToken) {
+      if (matchesUrl && (matchesToken || matchesName || requestedUrls)) {
         toDeleteUrls.push(item.url);
       }
     }

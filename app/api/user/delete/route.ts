@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { url, urls, token, tokens, deleteAll } = body;
+    const { url, urls, token, tokens, firstName, lastName, deleteAll } = body;
 
     const allTokens: string[] = [];
     if (typeof token === 'string' && token.trim()) allTokens.push(token.trim());
@@ -16,8 +16,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    if (allTokens.length === 0) {
-      return NextResponse.json({ error: 'חסר מזהה משתמש (Token) למחיקה' }, { status: 400 });
+    if (allTokens.length === 0 && (!firstName || !lastName)) {
+      return NextResponse.json({ error: 'חסרים פרטי זיהוי (טוקן או שם מלא) למחיקה' }, { status: 400 });
     }
 
     // 1. Bulk Delete All for this user
@@ -26,6 +26,8 @@ export async function POST(request: NextRequest) {
         token: allTokens[0],
         tokens: allTokens,
         urls: Array.isArray(urls) ? urls : undefined,
+        firstName,
+        lastName,
         deleteAll: true,
       });
 
@@ -43,6 +45,8 @@ export async function POST(request: NextRequest) {
         token: allTokens[0],
         tokens: allTokens,
         urls,
+        firstName,
+        lastName,
         deleteAll: false,
       });
 
@@ -66,6 +70,8 @@ export async function POST(request: NextRequest) {
           token: allTokens[0],
           tokens: allTokens,
           urls: [url],
+          firstName,
+          lastName,
           deleteAll: false,
         });
         success = deleted.length > 0;

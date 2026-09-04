@@ -32,12 +32,55 @@ export default function UserGreetingPage() {
   const [uploadedItem, setUploadedItem] = useState<MyUploadItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deletingUrl, setDeletingUrl] = useState<string | null>(null);
+  const [isSearchingByName, setIsSearchingByName] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Initialize persistent token, saved names, and fetch user's uploads
+  // Sync user uploads with server using token, saved names, and local URLs
+  const syncUserUploads = async (token: string, first?: string, last?: string, localList: MyUploadItem[] = []) => {
+    try {
+      const extraTokens = localList.map((i) => i.token).filter(Boolean);
+      const uniqueTokens = Array.from(new Set([token, ...extraTokens].filter(Boolean))).join(',');
+      const urls = localList.map((i) => i.url).filter(Boolean).join(',');
+
+      const params = new URLSearchParams();
+      if (token) params.set('token', token);
+      if (uniqueTokens) params.set('tokens', uniqueTokens);
+      if (first?.trim()) params.set('firstName', first.trim());
+      if (last?.trim()) params.set('lastName', last.trim());
+      if (urls) params.set('urls', urls);
+
+      const res = await fetch(`/api/user/my-uploads?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.items)) {
+          const merged: MyUploadItem[] = data.items.map((srvItem: any) => {
+            const localMatch = localList.find((l) => l.url === srvItem.url);
+            return {
+              url: srvItem.url,
+              token: srvItem.token || localMatch?.token || token,
+              fullName: srvItem.fullName || localMatch?.fullName || `${srvItem.firstName || ''} ${srvItem.lastName || ''}`.trim() || 'תושב/ת תמרת',
+              greeting: srvItem.greeting || localMatch?.greeting || '',
+              time: srvItem.time || localMatch?.time || Date.now(),
+            };
+          });
+
+          setMyUploads(merged);
+          try {
+            localStorage.setItem(MY_UPLOADS_KEY, JSON.stringify(merged));
+          } catch {}
+          return merged;
+        }
+      }
+    } catch (e) {
+      console.warn('Could not sync user uploads:', e);
+    }
+    return localList;
+  };
+
+  // Initialize on mount
   useEffect(() => {
-    // 1. User persistent token
+    // 1. Persistent Token
     let token = localStorage.getItem(USER_TOKEN_KEY);
     if (!token) {
       token = 'usr_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
@@ -45,13 +88,13 @@ export default function UserGreetingPage() {
     }
     setUserToken(token);
 
-    // 2. Pre-fill names if remembered
-    const savedFirst = localStorage.getItem(USER_FIRST_NAME_KEY);
-    const savedLast = localStorage.getItem(USER_LAST_NAME_KEY);
-    if (savedFirst && !firstName) setFirstName(savedFirst);
-    if (savedLast && !lastName) setLastName(savedLast);
+    // 2. Pre-fill names
+    const savedFirst = localStorage.getItem(USER_FIRST_NAME_KEY) || '';
+    const savedLast = localStorage.getItem(USER_LAST_NAME_KEY) || '';
+    if (savedFirst) setFirstName(savedFirst);
+    if (savedLast) setLastName(savedLast);
 
-    // 3. Load uploads from local storage
+    // 3. Load from localStorage
     let localItems: MyUploadItem[] = [];
     try {
       const raw = localStorage.getItem(MY_UPLOADS_KEY);
@@ -63,38 +106,8 @@ export default function UserGreetingPage() {
       }
     } catch {}
 
-    // 4. Sync with server to get active uploads
-    const syncWithServer = async () => {
-      try {
-        const extraTokens = localItems.map((i) => i.token).filter(Boolean);
-        const uniqueTokens = Array.from(new Set([token, ...extraTokens])).join(',');
-        const res = await fetch(`/api/user/my-uploads?token=${encodeURIComponent(token!)}&tokens=${encodeURIComponent(uniqueTokens)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data.items)) {
-            // Map server items to MyUploadItem
-            const serverUrls = new Set(data.items.map((i: any) => i.url));
-            // Keep local items that are confirmed on server, or merge details
-            const merged: MyUploadItem[] = data.items.map((srvItem: any) => {
-              const localMatch = localItems.find((l) => l.url === srvItem.url);
-              return {
-                url: srvItem.url,
-                token: localMatch?.token || token!,
-                fullName: srvItem.fullName || localMatch?.fullName || 'תושב/ת תמרת',
-                greeting: srvItem.greeting || localMatch?.greeting || '',
-                time: srvItem.time || localMatch?.time || Date.now(),
-              };
-            });
-            setMyUploads(merged);
-            localStorage.setItem(MY_UPLOADS_KEY, JSON.stringify(merged));
-          }
-        }
-      } catch (e) {
-        console.warn('Could not sync user uploads with server:', e);
-      }
-    };
-
-    syncWithServer();
+    // 4. Server Sync
+    syncUserUploads(token, savedFirst, savedLast, localItems);
   }, []);
 
   const handleSelectFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -139,7 +152,7 @@ export default function UserGreetingPage() {
     setIsSuccess(false);
     setProgress(15);
 
-    // Save name in localStorage for convenience
+    // Remember name in localStorage
     try {
       localStorage.setItem(USER_FIRST_NAME_KEY, cleanFirstName);
       localStorage.setItem(USER_LAST_NAME_KEY, cleanLastName);
@@ -158,7 +171,6 @@ export default function UserGreetingPage() {
     formData.append('greeting', cleanGreeting);
     formData.append('token', effectiveToken);
 
-    // Smooth progress simulation
     const progressTimer = setInterval(() => {
       setProgress((prev) => (prev < 90 ? prev + Math.floor(Math.random() * 15 + 5) : prev));
     }, 200);
@@ -190,7 +202,7 @@ export default function UserGreetingPage() {
       setUploadedItem(newItem);
       setIsSuccess(true);
 
-      // Update my uploads list
+      // Add to myUploads
       setMyUploads((prev) => {
         const updated = [newItem, ...prev.filter((i) => i.url !== newItem.url)];
         try {
@@ -213,7 +225,7 @@ export default function UserGreetingPage() {
     if (myUploads.length === 0) return;
 
     const count = myUploads.length;
-    const confirmMessage = `האם אתם בטוחים שברצונכם למחוק את כל ${count} התמונות והברכות שהעליתם?\n\nפעולה זו תמחק אותן לצמיתות והן יוסרו מיד גם ממסך ההקרנה.`;
+    const confirmMessage = `האם אתם בטוחים שברצונכם למחוק את כל ${count} התמונות והברכות שהעליתם?\n\nהן יוסרו מיד מהגלריה ומההקרנה.`;
     if (!confirm(confirmMessage)) return;
 
     setIsDeleting(true);
@@ -226,6 +238,8 @@ export default function UserGreetingPage() {
           token: userToken,
           tokens: allTokens,
           urls: myUploads.map((i) => i.url),
+          firstName: firstName.trim() || undefined,
+          lastName: lastName.trim() || undefined,
           deleteAll: true,
         }),
       });
@@ -242,7 +256,7 @@ export default function UserGreetingPage() {
         alert('כל התמונות והברכות שלך נמחקו בהצלחה מהמערכת.');
       } else {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || 'מחיקת התכנים נכשלה. אנא נסו שוב או פנו למנהל.');
+        alert(data.error || 'מחיקת התכנים נכשלה. אנא נסו שוב.');
       }
     } catch (e) {
       console.error('Delete all error:', e);
@@ -265,6 +279,8 @@ export default function UserGreetingPage() {
           url: item.url,
           token: item.token || userToken,
           tokens: [userToken, item.token].filter(Boolean),
+          firstName: firstName.trim() || undefined,
+          lastName: lastName.trim() || undefined,
         }),
       });
 
@@ -290,6 +306,30 @@ export default function UserGreetingPage() {
       alert('שגיאה במחיקת התמונה.');
     } finally {
       setDeletingUrl(null);
+    }
+  };
+
+  // Search and claim uploads by Name (useful if user refreshed or cleared cache)
+  const handleFindUploadsByName = async () => {
+    const cleanFirst = firstName.trim();
+    const cleanLast = lastName.trim();
+    if (!cleanFirst || !cleanLast) {
+      alert('נא להזין שם פרטי ושם משפחה בטופס למציאת ההעלאות שלך.');
+      return;
+    }
+
+    setIsSearchingByName(true);
+    try {
+      const found = await syncUserUploads(userToken, cleanFirst, cleanLast, myUploads);
+      if (found && found.length > 0) {
+        alert(`נמצאו ${found.length} תמונות תואמות לשם ${cleanFirst} ${cleanLast}! כעת תוכל/י לנהל ולמחוק אותן.`);
+      } else {
+        alert(`לא נמצאו תמונות פעילות במערכת תחת השם ${cleanFirst} ${cleanLast}.`);
+      }
+    } catch {
+      alert('שגיאה בחיפוש תמונות.');
+    } finally {
+      setIsSearchingByName(false);
     }
   };
 
@@ -321,18 +361,20 @@ export default function UserGreetingPage() {
         <h1 className="main-title">ברכות לשנה החדשה</h1>
         <p className="sub-title">קהילת תמרת – יישוב קהילתי כפרי</p>
 
-        {/* Top Quick Action Bar: My Uploads & Link to Gallery */}
+        {/* Top Action Bar */}
         <div className="user-top-actions">
-          <button
-            type="button"
-            className="my-uploads-trigger-btn"
-            onClick={() => setIsMyUploadsOpen(true)}
-            title="צפייה וניהול של כל התמונות שהעליתם"
-          >
-            <span>📸</span>
-            <span>ההעלאות שלי</span>
-            <span className="my-uploads-count-badge">{myUploads.length}</span>
-          </button>
+          {myUploads.length > 0 && (
+            <button
+              type="button"
+              className="my-uploads-trigger-btn"
+              onClick={() => setIsMyUploadsOpen(true)}
+              title="צפייה וניהול של כל התמונות שהעליתם"
+            >
+              <span>📸</span>
+              <span>ההעלאות שלי</span>
+              <span className="my-uploads-count-badge">{myUploads.length}</span>
+            </button>
+          )}
 
           <a
             href="/gallery"
@@ -347,6 +389,51 @@ export default function UserGreetingPage() {
             <span>למסך ההקרנה</span>
           </a>
         </div>
+
+        {/* ALWAYS-VISIBLE INLINE DELETE & UPLOADS PANEL (Active on Refresh and at all times) */}
+        {myUploads.length > 0 && (
+          <div className="my-active-uploads-panel animate-fade-in">
+            <div className="my-active-uploads-header">
+              <div className="my-active-uploads-title">
+                <span>📸</span>
+                <span>התמונות והברכות שהעלית ({myUploads.length})</span>
+              </div>
+              <button
+                type="button"
+                className="btn-delete-all-banner"
+                onClick={handleDeleteAllUploads}
+                disabled={isDeleting}
+                title="מחיקת כל התמונות שהעלית בבת אחת"
+              >
+                <span>🗑️</span>
+                <span>{isDeleting ? 'מוחק...' : 'מחק את כל ההעלאות שלי'}</span>
+              </button>
+            </div>
+
+            <div className="my-active-uploads-grid">
+              {myUploads.map((item) => (
+                <div className="my-active-upload-card" key={item.url}>
+                  <img src={item.url} alt="התמונה שהעלית" className="my-active-upload-img" />
+                  <div className="my-active-upload-info">
+                    <div className="my-active-upload-name">{item.fullName}</div>
+                    <div className="my-active-upload-greeting" title={item.greeting}>
+                      "{item.greeting}"
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="my-active-upload-del-btn"
+                    onClick={() => handleDeleteSingleUpload(item)}
+                    disabled={deletingUrl === item.url || isDeleting}
+                    title="מחק תמונה זו"
+                  >
+                    {deletingUrl === item.url ? 'מוחק...' : '🗑️ מחק'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* User instructions folder */}
         <div className="instruction-box">
@@ -392,6 +479,28 @@ export default function UserGreetingPage() {
                 />
               </div>
             </div>
+
+            {/* Find my uploads by name helper if user refreshed or on another device */}
+            {myUploads.length === 0 && (firstName.trim() || lastName.trim()) && (
+              <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+                <button
+                  type="button"
+                  onClick={handleFindUploadsByName}
+                  disabled={isSearchingByName}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#4ade80',
+                    fontSize: '0.85rem',
+                    textDecoration: 'underline',
+                    cursor: 'pointer',
+                    padding: '4px',
+                  }}
+                >
+                  {isSearchingByName ? 'מחפש העלאות קודמות...' : '🔍 העליתם כבר תמונה? לחצו למציאת ההעלאות שלכם ומחיקתן'}
+                </button>
+              </div>
+            )}
 
             {/* Greeting textarea */}
             <div className="input-group">
@@ -529,16 +638,6 @@ export default function UserGreetingPage() {
                 ➕ העלאת תמונה וברכה נוספת
               </button>
 
-              <button
-                type="button"
-                className="my-uploads-trigger-btn"
-                onClick={() => setIsMyUploadsOpen(true)}
-                style={{ justifyContent: 'center', padding: '0.85rem' }}
-              >
-                <span>📸 צפייה בכל ההעלאות שלי</span>
-                <span className="my-uploads-count-badge">{myUploads.length}</span>
-              </button>
-
               <a
                 href="/gallery"
                 className="btn-primary"
@@ -648,10 +747,10 @@ export default function UserGreetingPage() {
                 <div className="my-uploads-empty">
                   <div className="my-uploads-empty-icon">📭</div>
                   <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f8fafc' }}>
-                    עדיין לא העליתם תמונות
+                    לא נמצאו העלאות פעילות
                   </div>
                   <div style={{ fontSize: '0.9rem', maxWidth: '300px' }}>
-                    כל תמונה וברכה שתעלו ללוח היישוב תופיע כאן, ותוכלו למחוק אותה בכל שלב.
+                    הזינו את שמכם בטופס או העלו תמונה חדשה, והיא תופיע כאן עם אפשרות מחיקה.
                   </div>
                   <button
                     type="button"
@@ -659,12 +758,11 @@ export default function UserGreetingPage() {
                     style={{ marginTop: '1rem', padding: '0.6rem 1.2rem', fontSize: '0.95rem' }}
                     onClick={() => setIsMyUploadsOpen(false)}
                   >
-                    העלאת ברכה ראשונה ✨
+                    חזרה לטופס
                   </button>
                 </div>
               ) : (
                 <>
-                  {/* Danger Zone: Delete All Button */}
                   <div className="delete-all-banner">
                     <button
                       type="button"
@@ -680,11 +778,10 @@ export default function UserGreetingPage() {
                       </span>
                     </button>
                     <div className="delete-all-banner-text">
-                      ⚠️ לחיצה על כפתור זה תמחק לצמיתות את כל התמונות והברכות שהעליתם ממכשיר זה, והן יוסרו מיד מהגלריה ומההקרנה.
+                      ⚠️ לחיצה על כפתור זה תמחק לצמיתות את כל התמונות והברכות שהעליתם, והן יוסרו מיד מהגלריה ומההקרנה.
                     </div>
                   </div>
 
-                  {/* List of uploads */}
                   <div className="my-uploads-list">
                     {myUploads.map((item) => (
                       <div className="my-upload-card" key={item.url}>
