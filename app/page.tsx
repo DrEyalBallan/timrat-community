@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { uploadMediaWithProgress } from '@/lib/clientUpload';
+import { isMediaVideo } from '@/lib/mediaUtils';
 
 interface MyUploadItem {
   url: string;
@@ -115,7 +117,7 @@ export default function UserGreetingPage() {
     if (!file) return;
 
     setSelectedFile(file);
-    const isVid = file.type.startsWith('video/') || !!file.name.match(/\.(mp4|mov|webm|ogg|m4v)$/i);
+    const isVid = isMediaVideo(file.name) || file.type.startsWith('video/');
     if (isVid) {
       const objUrl = URL.createObjectURL(file);
       setFilePreview(objUrl);
@@ -149,7 +151,7 @@ export default function UserGreetingPage() {
       return;
     }
     if (!selectedFile) {
-      setErrorMessage('נא לבחור תמונה להעלאה');
+      setErrorMessage('נא לבחור תמונה או סרטון להעלאה');
       return;
     }
 
@@ -170,31 +172,16 @@ export default function UserGreetingPage() {
       localStorage.setItem(USER_TOKEN_KEY, effectiveToken);
     }
 
-    const formData = new FormData();
-    formData.append('file', selectedFile);
-    formData.append('firstName', cleanFirstName);
-    formData.append('lastName', cleanLastName);
-    formData.append('greeting', cleanGreeting);
-    formData.append('token', effectiveToken);
-
-    const progressTimer = setInterval(() => {
-      setProgress((prev) => (prev < 90 ? prev + Math.floor(Math.random() * 15 + 5) : prev));
-    }, 200);
-
     try {
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
+      const data = await uploadMediaWithProgress({
+        file: selectedFile,
+        firstName: cleanFirstName,
+        lastName: cleanLastName,
+        greeting: cleanGreeting,
+        token: effectiveToken,
+        onProgress: (pct) => setProgress(pct),
       });
 
-      clearInterval(progressTimer);
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error || 'ההעלאה נכשלה. אנא נסו שוב.');
-      }
-
-      const data = await response.json();
       setProgress(100);
 
       const newItem: MyUploadItem = {
@@ -217,8 +204,7 @@ export default function UserGreetingPage() {
         return updated;
       });
     } catch (err: any) {
-      clearInterval(progressTimer);
-      const msg = err?.message || 'שגיאה בהעלאת התמונה. אנא נסו שוב.';
+      const msg = err?.message || 'שגיאה בהעלאת הקובץ. אנא נסו שוב.';
       setErrorMessage(msg);
       console.error('Upload failed:', err);
     } finally {
@@ -419,7 +405,11 @@ export default function UserGreetingPage() {
             <div className="my-active-uploads-grid">
               {myUploads.map((item) => (
                 <div className="my-active-upload-card" key={item.url}>
-                  <img src={item.url} alt="התמונה שהעלית" className="my-active-upload-img" />
+                  {isMediaVideo(item.url) ? (
+                    <video src={item.url} muted playsInline className="my-active-upload-img" />
+                  ) : (
+                    <img src={item.url} alt="התמונה שהעלית" className="my-active-upload-img" />
+                  )}
                   <div className="my-active-upload-info">
                     <div className="my-active-upload-name">{item.fullName}</div>
                     <div className="my-active-upload-greeting" title={item.greeting}>
@@ -529,22 +519,21 @@ export default function UserGreetingPage() {
               </span>
             </div>
 
-            {/* File Dropzone & Selector */}
-            <input
-              type="file"
-              accept="image/*,video/*,.mp4,.mov,.webm,.m4v,.jpeg,.jpg,.png,.heic"
-              style={{ display: 'none' }}
-              ref={fileInputRef}
-              onChange={handleSelectFile}
-            />
-
-            <div
+            {/* Native Label File Dropzone */}
+            <label
               className="file-dropzone"
-              onClick={() => fileInputRef.current?.click()}
+              style={{ cursor: 'pointer', display: 'block' }}
             >
+              <input
+                type="file"
+                accept="image/*,video/*,.mp4,.mov,.webm,.m4v,.jpeg,.jpg,.png,.heic"
+                style={{ display: 'none' }}
+                disabled={isUploading}
+                onChange={handleSelectFile}
+              />
               {filePreview ? (
                 <div className="preview-container">
-                  {selectedFile?.type?.startsWith('video/') || !!selectedFile?.name?.match(/\.(mp4|mov|webm|ogg|m4v)$/i) ? (
+                  {selectedFile && (isMediaVideo(selectedFile.name) || selectedFile.type?.startsWith('video/')) ? (
                     <video
                       src={filePreview}
                       controls
@@ -558,7 +547,7 @@ export default function UserGreetingPage() {
                     <img src={filePreview} alt="תצוגה מקדימה" className="preview-img" />
                   )}
                   <div className="preview-badge">
-                    {selectedFile?.type?.startsWith('video/') || !!selectedFile?.name?.match(/\.(mp4|mov|webm|ogg|m4v)$/i)
+                    {selectedFile && (isMediaVideo(selectedFile.name) || selectedFile.type?.startsWith('video/'))
                       ? `🎬 נבחר סרטון וידאו: ${selectedFile?.name}`
                       : `📷 נבחרה תמונה: ${selectedFile?.name}`}{' '}
                     (לחצו להחלפה)
@@ -575,7 +564,7 @@ export default function UserGreetingPage() {
                   </div>
                 </div>
               )}
-            </div>
+            </label>
 
             {/* Error Message */}
             {errorMessage && (
@@ -631,7 +620,7 @@ export default function UserGreetingPage() {
               {/* Postcard preview */}
               {uploadedItem && (
                 <div className="postcard-box">
-                  {uploadedItem.url.match(/\.(mp4|webm|ogg|mov|m4v)$/i) ? (
+                  {isMediaVideo(uploadedItem.url) ? (
                     <video
                       src={uploadedItem.url}
                       controls
@@ -813,7 +802,11 @@ export default function UserGreetingPage() {
                   <div className="my-uploads-list">
                     {myUploads.map((item) => (
                       <div className="my-upload-card" key={item.url}>
-                        <img src={item.url} alt="העלאה שלי" className="my-upload-thumb" />
+                        {isMediaVideo(item.url) ? (
+                          <video src={item.url} muted playsInline className="my-upload-thumb" />
+                        ) : (
+                          <img src={item.url} alt="העלאה שלי" className="my-upload-thumb" />
+                        )}
                         <div className="my-upload-details">
                           <div className="my-upload-name">{item.fullName}</div>
                           <div className="my-upload-greeting" title={item.greeting}>

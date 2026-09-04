@@ -94,7 +94,8 @@ export async function fetchAllCloudinaryGalleryItems(): Promise<GalleryItem[]> {
       }),
     ]);
 
-    const allResources = [...(imageResult.resources || []), ...(videoResult.resources || [])];
+    const allResources = [...(imageResult.resources || []), ...(videoResult.resources || [])]
+      .filter((res: any) => !res.placeholder && (res.bytes === undefined || res.bytes > 0));
     const items: GalleryItem[] = allResources.map((res: any) => {
       const ctx = res.context?.custom || {};
       let firstName = '';
@@ -187,10 +188,61 @@ export async function updateCloudinaryItemAiVideo(publicId: string, aiVideoUrl?:
 export async function deleteFromCloudinary(publicIds: string[]): Promise<void> {
   try {
     if (publicIds.length > 0) {
-      await cloudinary.api.delete_resources(publicIds);
+      // 1. Untag immediately so queries by tag never return deleted placeholders
+      try {
+        await cloudinary.uploader.remove_tag('timrat_new_year', publicIds);
+      } catch (e) {
+        console.warn('Could not remove tag from Cloudinary items:', e);
+      }
+
+      // 2. Delete both image and video resources from Cloudinary
+      await cloudinary.api.delete_resources(publicIds, { resource_type: 'image' }).catch(() => null);
+      await cloudinary.api.delete_resources(publicIds, { resource_type: 'video' }).catch(() => null);
     }
   } catch (err) {
     console.warn('Error deleting resources from Cloudinary:', err);
   }
 }
+
+export function generateUploadSignature(folder: string = 'timrat-community', tags: string = 'timrat_new_year') {
+  const timestamp = Math.round(new Date().getTime() / 1000);
+  const paramsToSign: Record<string, any> = {
+    folder,
+    tags,
+    timestamp,
+  };
+  const signature = cloudinary.utils.api_sign_request(
+    paramsToSign,
+    process.env.CLOUDINARY_API_SECRET || 'SUr7VNDvITDZ796Yx6XW5Itgk-E'
+  );
+  return {
+    signature,
+    timestamp,
+    apiKey: process.env.CLOUDINARY_API_KEY || '652565257832732',
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME || 'dp4uagtq9',
+    folder,
+    tags,
+  };
+}
+
+export async function addCloudinaryMetadata(
+  publicId: string,
+  data: { firstName?: string; lastName?: string; greeting?: string; token?: string }
+): Promise<void> {
+  try {
+    const firstNameB64 = Buffer.from(data.firstName || '', 'utf-8').toString('base64');
+    const lastNameB64 = Buffer.from(data.lastName || '', 'utf-8').toString('base64');
+    const greetingB64 = Buffer.from(data.greeting || '', 'utf-8').toString('base64');
+    const token = data.token || '';
+    const time = Date.now().toString();
+
+    await cloudinary.uploader.add_context(
+      `first_name_b64=${firstNameB64}|last_name_b64=${lastNameB64}|greeting_b64=${greetingB64}|token=${token}|time=${time}`,
+      [publicId]
+    );
+  } catch (err) {
+    console.warn('Could not add context to Cloudinary asset:', err);
+  }
+}
+
 

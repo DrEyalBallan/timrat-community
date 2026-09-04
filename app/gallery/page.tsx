@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { isMediaVideo } from '@/lib/mediaUtils';
 
 interface ImageItem {
   id: string;
@@ -295,7 +296,7 @@ export default function FullscreenGalleryPage() {
   };
 
   const activeItem = images.length > 0 ? images[currentIndex % images.length] : null;
-  const isVideo = activeItem?.url?.match(/\.(mp4|webm|ogg|mov)$/i);
+  const isVideo = isMediaVideo(activeItem?.url);
 
   return (
     <main
@@ -688,7 +689,11 @@ export default function FullscreenGalleryPage() {
                   <div className="my-uploads-list">
                     {myUploads.map((item) => (
                       <div className="my-upload-card" key={item.url}>
-                        <img src={item.url} alt="העלאה שלי" className="my-upload-thumb" />
+                        {isMediaVideo(item.url) ? (
+                          <video src={item.url} muted playsInline className="my-upload-thumb" />
+                        ) : (
+                          <img src={item.url} alt="העלאה שלי" className="my-upload-thumb" />
+                        )}
                         <div className="my-upload-details">
                           <div className="my-upload-name">{item.fullName}</div>
                           <div className="my-upload-greeting" title={item.greeting}>

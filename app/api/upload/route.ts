@@ -2,13 +2,63 @@ import { NextRequest, NextResponse } from 'next/server';
 import path from 'path';
 import fs from 'fs';
 import { addGalleryItem, GalleryItem, getUploadsDir } from '@/lib/storage';
-import { uploadBufferToCloudinary } from '@/lib/cloudinary';
+import { uploadBufferToCloudinary, addCloudinaryMetadata } from '@/lib/cloudinary';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
+    const contentType = request.headers.get('content-type') || '';
+
+    // Handle Direct Upload (e.g. video or large image uploaded directly to Cloudinary)
+    if (contentType.includes('application/json')) {
+      const body = await request.json();
+      if (body.directUpload && body.url) {
+        const firstName = (body.firstName || '').trim();
+        const lastName = (body.lastName || '').trim();
+        const greeting = (body.greeting || '').trim();
+        const fullName = [firstName, lastName].filter(Boolean).join(' ').trim() || 'תושב/ת תמרת';
+        const clientToken = body.token || Math.random().toString(36).slice(2, 12);
+        const timestamp = Date.now();
+        const uniqueId = Math.random().toString(36).slice(2, 10);
+        const publicId = body.publicId || body.filename || `timrat_${timestamp}_${uniqueId}`;
+
+        if (publicId) {
+          await addCloudinaryMetadata(publicId, { firstName, lastName, greeting, token: clientToken });
+        }
+
+        const galleryItem: GalleryItem = {
+          id: `${timestamp}-${uniqueId}`,
+          url: body.url,
+          firstName,
+          lastName,
+          fullName,
+          greeting,
+          time: timestamp,
+          token: clientToken,
+          filename: publicId,
+        };
+
+        await addGalleryItem(galleryItem);
+
+        return NextResponse.json({
+          url: galleryItem.url,
+          token: clientToken,
+          item: {
+            id: galleryItem.id,
+            url: galleryItem.url,
+            firstName: galleryItem.firstName,
+            lastName: galleryItem.lastName,
+            fullName: galleryItem.fullName,
+            greeting: galleryItem.greeting,
+            time: galleryItem.time,
+          },
+        });
+      }
+    }
+
     const formData = await request.formData();
+
     const file = formData.get('file') as File | null;
     const firstName = ((formData.get('firstName') as string) || '').trim();
     const lastName = ((formData.get('lastName') as string) || '').trim();

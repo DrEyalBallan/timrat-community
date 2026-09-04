@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { uploadMediaWithProgress } from '@/lib/clientUpload';
+import { isMediaVideo } from '@/lib/mediaUtils';
 
 interface ImageItem {
   id: string;
@@ -19,6 +21,7 @@ export default function AdminPage() {
   const [images, setImages] = useState<ImageItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [deletingUrls, setDeletingUrls] = useState<Set<string>>(new Set());
+  const deletedUrlsRef = useRef<Set<string>>(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [selectedUrls, setSelectedUrls] = useState<Set<string>>(new Set());
   const [isReorderMode, setIsReorderMode] = useState(false);
@@ -114,7 +117,8 @@ export default function AdminPage() {
       const res = await fetch('/api/images', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        setImages(data.images || []);
+        const incoming = (data.images || []).filter((img: ImageItem) => !deletedUrlsRef.current.has(img.url));
+        setImages(incoming);
       }
     } catch (err) {
       console.error('Failed to fetch images', err);
@@ -160,6 +164,7 @@ export default function AdminPage() {
   const handleDeleteSingle = async (url: string) => {
     if (!confirm('האם אתם בטוחים שברצונכם למחוק לצמיתות פריט זה?')) return;
 
+    deletedUrlsRef.current.add(url);
     setDeletingUrls((prev) => new Set(prev).add(url));
     try {
       const res = await fetch('/api/admin/delete', {
@@ -177,13 +182,16 @@ export default function AdminPage() {
         });
         if (activeModalItem?.url === url) setActiveModalItem(null);
       } else if (res.status === 401) {
+        deletedUrlsRef.current.delete(url);
         alert('אין הרשאה! סיסמת מנהל שגויה.');
         handleLogout();
       } else {
+        deletedUrlsRef.current.delete(url);
         const data = await res.json();
         alert('שגיאה במחיקה: ' + (data.error || 'שגיאה לא ידועה'));
       }
     } catch (err) {
+      deletedUrlsRef.current.delete(url);
       console.error('Delete error', err);
       alert('שגיאה במחיקת הפריט.');
     } finally {
@@ -201,6 +209,7 @@ export default function AdminPage() {
 
     setIsBulkDeleting(true);
     const targetUrls = Array.from(selectedUrls);
+    targetUrls.forEach((u) => deletedUrlsRef.current.add(u));
 
     try {
       const res = await fetch('/api/admin/delete', {
@@ -213,13 +222,16 @@ export default function AdminPage() {
         setImages((prev) => prev.filter((img) => !targetUrls.includes(img.url)));
         setSelectedUrls(new Set());
       } else if (res.status === 401) {
+        targetUrls.forEach((u) => deletedUrlsRef.current.delete(u));
         alert('אין הרשאה! סיסמה שגויה.');
         handleLogout();
       } else {
+        targetUrls.forEach((u) => deletedUrlsRef.current.delete(u));
         const data = await res.json();
         alert('שגיאה במחיקה: ' + (data.error || 'שגיאה לא ידועה'));
       }
     } catch (err) {
+      targetUrls.forEach((u) => deletedUrlsRef.current.delete(u));
       console.error('Delete selected error', err);
       alert('שגיאה במחיקת הפריטים הנבחרים.');
     } finally {
@@ -231,33 +243,34 @@ export default function AdminPage() {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
+    const fileList = Array.from(files);
     setIsBulkUploading(true);
-    setUploadProgress({ current: 0, total: files.length });
+    setUploadProgress({ current: 0, total: fileList.length });
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    let successCount = 0;
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
       try {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('firstName', 'צוות');
-        formData.append('lastName', 'תמרת');
-        formData.append('greeting', 'שנה טובה ומבורכת מקהילת תמרת!');
-
-        await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
+        const isVid = isMediaVideo(file.name) || file.type.startsWith('video/');
+        await uploadMediaWithProgress({
+          file,
+          firstName: 'קהילת',
+          lastName: 'תמרת',
+          greeting: isVid ? 'סרטון קהילת תמרת 🎬 שנה טובה ומבורכת!' : 'שנה טובה ומבורכת מקהילת תמרת!',
         });
-
-        setUploadProgress({ current: i + 1, total: files.length });
+        successCount++;
+        setUploadProgress({ current: successCount, total: fileList.length });
       } catch (err) {
         console.error('Failed to upload file:', file.name, err);
       }
     }
 
     setIsBulkUploading(false);
+    e.target.value = '';
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+    alert(`✅ הועלו בהצלחה ${successCount} מתוך ${fileList.length} קבצים!`);
     fetchImages(password);
   };
 
@@ -269,21 +282,15 @@ export default function AdminPage() {
     setUploadProgress({ current: 0, total: 1 });
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('firstName', 'קהילת');
-      formData.append('lastName', 'תמרת');
-      formData.append('greeting', 'סרטון קהילת תמרת 🎬 שנה טובה ומבורכת!');
-
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
+      await uploadMediaWithProgress({
+        file,
+        firstName: 'קהילת',
+        lastName: 'תמרת',
+        greeting: 'סרטון קהילת תמרת 🎬 שנה טובה ומבורכת!',
+        onProgress: (pct) => {
+          // progress updates
+        },
       });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || 'שגיאה בהעלאת קובץ הווידאו');
-      }
 
       setUploadProgress({ current: 1, total: 1 });
       alert('✅ סרטון הווידאו הועלה בהצלחה למסך ההקרנה ולגלריה!');
@@ -291,6 +298,7 @@ export default function AdminPage() {
       alert('⚠️ ' + (err?.message || 'שגיאה בהעלאת הווידאו'));
     } finally {
       setIsBulkUploading(false);
+      e.target.value = '';
       if (standaloneVideoInputRef.current) {
         standaloneVideoInputRef.current.value = '';
       }
@@ -302,7 +310,7 @@ export default function AdminPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     setAdminCustomFile(file);
-    const isVid = file.type.startsWith('video/') || !!file.name.match(/\.(mp4|mov|webm|ogg|m4v)$/i);
+    const isVid = isMediaVideo(file.name) || file.type.startsWith('video/');
     if (isVid) {
       setAdminCustomPreview(URL.createObjectURL(file));
     } else {
@@ -320,23 +328,17 @@ export default function AdminPage() {
     }
     setIsAdminCustomUploading(true);
     try {
-      const formData = new FormData();
-      formData.append('file', adminCustomFile);
       const nameParts = adminCustomName.trim().split(' ');
-      formData.append('firstName', nameParts[0] || 'קהילת');
-      formData.append('lastName', nameParts.slice(1).join(' ') || 'תמרת');
-      formData.append('greeting', adminCustomGreeting || 'שנה טובה ומבורכת!');
-      formData.append('password', password);
+      const fName = nameParts[0] || 'קהילת';
+      const lName = nameParts.slice(1).join(' ') || 'תמרת';
+      const greet = adminCustomGreeting || 'שנה טובה ומבורכת!';
 
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
+      await uploadMediaWithProgress({
+        file: adminCustomFile,
+        firstName: fName,
+        lastName: lName,
+        greeting: greet,
       });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || 'העלאה נכשלה');
-      }
 
       alert('✅ הקובץ והברכה הועלו בהצלחה למסך ההקרנה ולגלריה!');
       setAdminCustomFile(null);
@@ -444,30 +446,67 @@ export default function AdminPage() {
     setDirectUploadingUrl(targetImageUrl);
     setIsUploadingVideo(true);
     setVideoMsg('מעלה סרטון AI לענן...');
-    setVideoUploadProgress(25);
+    setVideoUploadProgress(20);
 
-    const formData = new FormData();
-    formData.append('password', password);
-    formData.append('imageUrl', targetImageUrl);
-    formData.append('action', 'attach');
+    let uploadedVideoUrl = customUrl.trim();
+
+    // Try direct signed upload to Cloudinary for files
     if (file) {
-      formData.append('file', file);
-    }
-    if (customUrl.trim()) {
-      formData.append('videoUrl', customUrl.trim());
-    }
+      try {
+        const signRes = await fetch('/api/cloudinary/sign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ folder: 'timrat-community/ai-videos', tags: 'timrat_ai_video' }),
+        });
+        if (signRes.ok) {
+          const { signature, timestamp, apiKey, cloudName, folder, tags } = await signRes.json();
+          const cldForm = new FormData();
+          cldForm.append('file', file);
+          cldForm.append('api_key', apiKey);
+          cldForm.append('timestamp', timestamp.toString());
+          cldForm.append('folder', folder);
+          cldForm.append('tags', tags);
+          cldForm.append('signature', signature);
 
-    const progressTimer = setInterval(() => {
-      setVideoUploadProgress((prev) => (prev < 90 ? prev + 15 : prev));
-    }, 400);
+          const cldRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/video/upload`, {
+            method: 'POST',
+            body: cldForm,
+          });
+          if (cldRes.ok) {
+            const cldData = await cldRes.json();
+            uploadedVideoUrl = cldData.secure_url || cldData.url;
+            setVideoUploadProgress(80);
+          }
+        }
+      } catch (e) {
+        console.warn('Direct AI video upload fallback to server proxy:', e);
+      }
+    }
 
     try {
-      const res = await fetch('/api/admin/video', {
-        method: 'POST',
-        body: formData,
-      });
-
-      clearInterval(progressTimer);
+      let res: Response;
+      if (uploadedVideoUrl) {
+        res = await fetch('/api/admin/video', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            password,
+            imageUrl: targetImageUrl,
+            action: 'attach',
+            videoUrl: uploadedVideoUrl,
+          }),
+        });
+      } else {
+        const formData = new FormData();
+        formData.append('password', password);
+        formData.append('imageUrl', targetImageUrl);
+        formData.append('action', 'attach');
+        if (file) formData.append('file', file);
+        res = await fetch('/api/admin/video', {
+          method: 'POST',
+          body: formData,
+        });
+      }
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -475,7 +514,7 @@ export default function AdminPage() {
       }
 
       const data = await res.json();
-      const newVideoUrl = data.aiVideoUrl;
+      const newVideoUrl = data.aiVideoUrl || uploadedVideoUrl;
 
       setVideoUploadProgress(100);
       setImages((prev) =>
@@ -494,7 +533,6 @@ export default function AdminPage() {
       if (videoFileInputRef.current) videoFileInputRef.current.value = '';
       setTimeout(() => setVideoMsg(''), 3000);
     } catch (err: any) {
-      clearInterval(progressTimer);
       setVideoMsg('⚠️ ' + (err.message || 'שגיאה בהעלאת הווידאו'));
     } finally {
       setIsUploadingVideo(false);
@@ -695,28 +733,47 @@ export default function AdminPage() {
             )}
           </div>
 
-          <button
-            onClick={() => fileInputRef.current?.click()}
+          <label
             className="btn-secondary"
-            disabled={isBulkUploading}
+            style={{
+              cursor: isBulkUploading ? 'not-allowed' : 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+            }}
           >
-            {isBulkUploading ? `מעלה ${uploadProgress.current}/${uploadProgress.total}...` : '📤 העלאת תמונות וסרטונים'}
-          </button>
+            <input
+              type="file"
+              accept="image/*,video/*,.mp4,.mov,.webm,.m4v,.jpeg,.jpg,.png,.heic"
+              multiple
+              style={{ display: 'none' }}
+              disabled={isBulkUploading}
+              onChange={handleBulkUpload}
+            />
+            <span>{isBulkUploading ? `מעלה ${uploadProgress.current}/${uploadProgress.total}...` : '📤 העלאת תמונות וסרטונים'}</span>
+          </label>
 
-          <button
-            onClick={() => standaloneVideoInputRef.current?.click()}
+          <label
             className="btn-secondary"
-            disabled={isBulkUploading}
             style={{
               background: '#f0fdf4',
               borderColor: '#16a34a',
               color: '#15803d',
               fontWeight: 700,
+              cursor: isBulkUploading ? 'not-allowed' : 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
             }}
             title="העלאת סרטון וידאו חדש מהמכשיר ישירות למסך ההקרנה"
           >
-            🎬 העלאת סרטון חדש למסך
-          </button>
+            <input
+              type="file"
+              accept="video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
+              style={{ display: 'none' }}
+              disabled={isBulkUploading}
+              onChange={handleUploadStandaloneVideo}
+            />
+            <span>🎬 העלאת סרטון חדש למסך</span>
+          </label>
 
           {isReorderMode ? (
             <button
@@ -1025,7 +1082,11 @@ export default function AdminPage() {
               style={{ background: '#ffffff', border: '1.5px solid #e2e8f0', color: '#0f172a' }}
             >
               <div className="grid-card-media">
-                <img src={item.url} alt={item.greeting} className="grid-card-img" loading="lazy" />
+                {isMediaVideo(item.url) ? (
+                  <video src={item.url} muted playsInline className="grid-card-img" />
+                ) : (
+                  <img src={item.url} alt={item.greeting} className="grid-card-img" loading="lazy" />
+                )}
               </div>
               <div className="grid-card-body">
                 <div className="grid-card-greeting" style={{ color: '#0f172a' }}>
@@ -1064,7 +1125,7 @@ export default function AdminPage() {
         <div className="admin-grid">
           {filteredImages.map((item, index) => {
             const isSelected = selectedUrls.has(item.url);
-            const isVideo = item.url.match(/\.(mp4|webm|ogg|mov)$/i);
+            const isVideo = isMediaVideo(item.url);
 
             return (
               <div
@@ -1118,7 +1179,7 @@ export default function AdminPage() {
                   title="לחצו להגדלה"
                 >
                   {isVideo ? (
-                    <video src={item.url} muted className="admin-card-img" />
+                    <video src={item.url} muted playsInline className="admin-card-img" />
                   ) : (
                     <img src={item.url} alt={item.greeting} className="admin-card-img" loading="lazy" />
                   )}
@@ -1340,11 +1401,22 @@ export default function AdminPage() {
               ✕
             </button>
             <div className="modal-img-wrap">
-              <img
-                src={activeModalItem.url}
-                alt={activeModalItem.greeting}
-                className="modal-img"
-              />
+              {isMediaVideo(activeModalItem.url) ? (
+                <video
+                  src={activeModalItem.url}
+                  controls
+                  autoPlay
+                  playsInline
+                  className="modal-img"
+                  style={{ maxHeight: '520px', width: '100%', objectFit: 'contain', background: '#000', borderRadius: '12px' }}
+                />
+              ) : (
+                <img
+                  src={activeModalItem.url}
+                  alt={activeModalItem.greeting}
+                  className="modal-img"
+                />
+              )}
             </div>
             <div className="modal-body" style={{ background: '#ffffff', color: '#0f172a' }}>
               <h3 style={{ fontSize: '1.35rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.5rem', lineHeight: '1.4' }}>

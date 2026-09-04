@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { fetchAllCloudinaryGalleryItems, deleteFromCloudinary } from './cloudinary';
+export { isMediaVideo } from './mediaUtils';
 
 export interface GalleryItem {
   id: string;
@@ -62,8 +63,73 @@ export function getDataFilePath(): string {
   }
 }
 
+
+// Persistent blacklist of deleted identifiers (URLs and Cloudinary public IDs)
+let deletedIdentifiers: Set<string> = new Set();
+
+export function getDeletedFilePath(): string {
+  const localDir = path.join(process.cwd(), 'data');
+  const localFile = path.join(localDir, 'deleted.json');
+  try {
+    if (!fs.existsSync(localDir)) {
+      fs.mkdirSync(localDir, { recursive: true });
+    }
+    return localFile;
+  } catch {
+    const tmpDir = path.join(os.tmpdir(), 'timrat-data');
+    try {
+      if (!fs.existsSync(tmpDir)) {
+        fs.mkdirSync(tmpDir, { recursive: true });
+      }
+    } catch {}
+    return path.join(tmpDir, 'deleted.json');
+  }
+}
+
+function loadDeletedBlacklist(): Set<string> {
+  const file = getDeletedFilePath();
+  try {
+    if (fs.existsSync(file)) {
+      const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      if (Array.isArray(data)) {
+        return new Set(data);
+      }
+    }
+  } catch {}
+  return new Set();
+}
+
+function saveDeletedBlacklist(set: Set<string>): void {
+  const file = getDeletedFilePath();
+  try {
+    fs.writeFileSync(file, JSON.stringify(Array.from(set)), 'utf-8');
+  } catch {}
+}
+
+export function isItemDeleted(item: { url?: string; id?: string; filename?: string }): boolean {
+  if (deletedIdentifiers.size === 0) {
+    deletedIdentifiers = loadDeletedBlacklist();
+  }
+  if (!item) return false;
+  if (item.url && deletedIdentifiers.has(item.url)) return true;
+  if (item.id && deletedIdentifiers.has(item.id)) return true;
+  if (item.filename && deletedIdentifiers.has(item.filename)) return true;
+
+  if (item.url) {
+    const isMatched = Array.from(deletedIdentifiers).some(
+      (delId) => Boolean(delId && delId.startsWith('timrat-community/') && item.url!.includes(delId))
+    );
+    if (isMatched) return true;
+  }
+  return false;
+}
+
 export async function getGalleryItems(): Promise<GalleryItem[]> {
   const now = Date.now();
+
+  if (deletedIdentifiers.size === 0) {
+    deletedIdentifiers = loadDeletedBlacklist();
+  }
 
   // 1. If memoryStore not initialized yet, try loading from local disk cache first
   if (!isMemoryStoreInitialized) {
@@ -73,7 +139,7 @@ export async function getGalleryItems(): Promise<GalleryItem[]> {
         const raw = fs.readFileSync(dataFile, 'utf-8');
         const items: GalleryItem[] = JSON.parse(raw);
         if (Array.isArray(items) && items.length > 0) {
-          memoryStore = items;
+          memoryStore = items.filter((i) => !isItemDeleted(i));
           isMemoryStoreInitialized = true;
         }
       }
@@ -87,10 +153,12 @@ export async function getGalleryItems(): Promise<GalleryItem[]> {
     try {
       const cloudItems = await fetchAllCloudinaryGalleryItems();
       if (cloudItems && Array.isArray(cloudItems)) {
-        // Merge with memoryStore so local recent uploads aren't lost before Cloudinary indexes them
-        const cloudIds = new Set(cloudItems.map(i => i.url));
-        const recentLocalOnly = memoryStore.filter(i => !cloudIds.has(i.url) && (now - i.time < 60000));
-        memoryStore = [...recentLocalOnly, ...cloudItems];
+        const activeCloudItems = cloudItems.filter((i) => !isItemDeleted(i));
+        const cloudIds = new Set(activeCloudItems.map((i) => i.url));
+        const recentLocalOnly = memoryStore.filter(
+          (i) => !cloudIds.has(i.url) && !isItemDeleted(i) && (now - i.time < 60000)
+        );
+        memoryStore = [...recentLocalOnly, ...activeCloudItems].filter((i) => !isItemDeleted(i));
         isMemoryStoreInitialized = true;
         lastCloudinaryFetch = now;
 
@@ -105,7 +173,6 @@ export async function getGalleryItems(): Promise<GalleryItem[]> {
     } catch (err: any) {
       const errMsg = err?.message || JSON.stringify(err);
       console.warn('Cloudinary fetch paused (fallback to cache):', errMsg);
-      // If rate limited (code 420) or network error, cooldown for 5 minutes
       cloudinaryCooldownUntil = now + 5 * 60 * 1000;
     }
   }
@@ -114,21 +181,29 @@ export async function getGalleryItems(): Promise<GalleryItem[]> {
     memoryStore = [];
     isMemoryStoreInitialized = true;
   }
-  return memoryStore;
+  return memoryStore.filter((i) => !isItemDeleted(i));
 }
 
 export async function saveGalleryItems(items: GalleryItem[]): Promise<void> {
-  memoryStore = [...items];
+  const filtered = items.filter((i) => !isItemDeleted(i));
+  memoryStore = [...filtered];
   isMemoryStoreInitialized = true;
   const dataFile = getDataFilePath();
   try {
-    fs.writeFileSync(dataFile, JSON.stringify(items, null, 2), 'utf-8');
+    fs.writeFileSync(dataFile, JSON.stringify(filtered, null, 2), 'utf-8');
   } catch (err) {
     console.warn('Could not write to dataFile (running in memory):', err);
   }
 }
 
 export async function addGalleryItem(item: GalleryItem): Promise<void> {
+  if (isItemDeleted(item)) {
+    // If re-uploaded, remove from deleted blacklist
+    deletedIdentifiers.delete(item.url);
+    if (item.filename) deletedIdentifiers.delete(item.filename);
+    if (item.id) deletedIdentifiers.delete(item.id);
+    saveDeletedBlacklist(deletedIdentifiers);
+  }
   const items = await getGalleryItems();
   const updated = [item, ...items.filter((i) => i.url !== item.url)];
   await saveGalleryItems(updated);
@@ -142,11 +217,36 @@ export async function deleteGalleryItemsByUrls(urls: string[]): Promise<string[]
   const uploadsDir = getUploadsDir();
   const cloudinaryIdsToDelete: string[] = [];
 
+  if (deletedIdentifiers.size === 0) {
+    deletedIdentifiers = loadDeletedBlacklist();
+  }
+
+  // Add all input URLs to blacklist and extract Cloudinary IDs directly
+  for (const u of urls) {
+    deletedIdentifiers.add(u);
+    if (u.includes('timrat-community/')) {
+      const match = u.match(/timrat-community\/[a-zA-Z0-9_-]+/);
+      if (match && !cloudinaryIdsToDelete.includes(match[0])) {
+        cloudinaryIdsToDelete.push(match[0]);
+      }
+    }
+  }
+
   for (const item of items) {
-    if (urlSet.has(item.url)) {
+    if (urlSet.has(item.url) || isItemDeleted(item)) {
       deletedUrls.push(item.url);
+      deletedIdentifiers.add(item.url);
+      if (item.id) deletedIdentifiers.add(item.id);
+
       if (item.filename && item.filename.startsWith('timrat-community/')) {
-        cloudinaryIdsToDelete.push(item.filename);
+        if (!cloudinaryIdsToDelete.includes(item.filename)) {
+          cloudinaryIdsToDelete.push(item.filename);
+        }
+      } else if (item.url.includes('timrat-community/')) {
+        const match = item.url.match(/timrat-community\/[a-zA-Z0-9_-]+/);
+        if (match && !cloudinaryIdsToDelete.includes(match[0])) {
+          cloudinaryIdsToDelete.push(match[0]);
+        }
       } else if (item.filename) {
         const filePath = path.join(uploadsDir, item.filename);
         try {
@@ -157,10 +257,24 @@ export async function deleteGalleryItemsByUrls(urls: string[]): Promise<string[]
           console.warn('Could not delete file:', filePath, e);
         }
       }
+
+      // Also clean up linked AI video in Cloudinary if present
+      if (item.aiVideoUrl && item.aiVideoUrl.includes('timrat-community/ai-videos/')) {
+        const vidMatch = item.aiVideoUrl.match(/timrat-community\/ai-videos\/[a-zA-Z0-9_-]+/);
+        if (vidMatch) {
+          cloudinaryIdsToDelete.push(vidMatch[0]);
+          deletedIdentifiers.add(vidMatch[0]);
+        }
+      }
     } else {
       remaining.push(item);
     }
   }
+
+  for (const cid of cloudinaryIdsToDelete) {
+    deletedIdentifiers.add(cid);
+  }
+  saveDeletedBlacklist(deletedIdentifiers);
 
   if (cloudinaryIdsToDelete.length > 0) {
     await deleteFromCloudinary(cloudinaryIdsToDelete);
