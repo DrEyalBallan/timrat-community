@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { attachAiVideoToItem, removeAiVideoFromItem, getGalleryItems } from '@/lib/storage';
+import path from 'path';
+import fs from 'fs';
+import { attachAiVideoToItem, removeAiVideoFromItem, getGalleryItems, getUploadsDir } from '@/lib/storage';
 import { uploadAiVideoToCloudinary, updateCloudinaryItemAiVideo } from '@/lib/cloudinary';
 
 export const dynamic = 'force-dynamic';
@@ -60,7 +62,22 @@ export async function POST(request: NextRequest) {
 
     // If uploading a video file
     if (videoBuffer) {
-      videoUrl = await uploadAiVideoToCloudinary(videoBuffer);
+      try {
+        videoUrl = await uploadAiVideoToCloudinary(videoBuffer);
+      } catch (cldErr) {
+        console.warn('Cloudinary video upload failed, saving to local uploads dir:', cldErr);
+        const uniqueId = Math.random().toString(36).slice(2, 10);
+        const filename = `ai_video_${Date.now()}_${uniqueId}.mp4`;
+        const uploadsDir = getUploadsDir();
+        const filePath = path.join(uploadsDir, filename);
+        try {
+          fs.writeFileSync(filePath, videoBuffer);
+          videoUrl = `/uploads/${filename}`;
+        } catch (fsErr) {
+          console.error('Failed to write local video file:', fsErr);
+          throw new Error('שגיאה בשמירת קובץ הווידאו');
+        }
+      }
     }
 
     if (!videoUrl) {

@@ -40,6 +40,9 @@ export default function AdminPage() {
   const [selectedVideoFile, setSelectedVideoFile] = useState<File | null>(null);
   const [videoMsg, setVideoMsg] = useState('');
   const videoFileInputRef = useRef<HTMLInputElement>(null);
+  const directVideoFileInputRef = useRef<HTMLInputElement>(null);
+  const [directUploadingUrl, setDirectUploadingUrl] = useState<string | null>(null);
+  const [targetItemForDirectUpload, setTargetItemForDirectUpload] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const settingsTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -313,12 +316,34 @@ export default function AdminPage() {
     }
   };
 
+  const handleTriggerDirectVideoUpload = (itemUrl: string) => {
+    setTargetItemForDirectUpload(itemUrl);
+    if (directVideoFileInputRef.current) {
+      directVideoFileInputRef.current.value = '';
+      directVideoFileInputRef.current.click();
+    }
+  };
+
+  const handleDirectFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !targetItemForDirectUpload) return;
+    const target = targetItemForDirectUpload;
+    setDirectUploadingUrl(target);
+    try {
+      await handleUploadAiVideo(target, file, '');
+    } finally {
+      setDirectUploadingUrl(null);
+      setTargetItemForDirectUpload(null);
+    }
+  };
+
   const handleUploadAiVideo = async (targetImageUrl: string, file: File | null, customUrl: string) => {
     if (!file && !customUrl.trim()) {
       setVideoMsg('נא לבחור קובץ וידאו מהמחשב או להזין קישור תקין');
       return;
     }
 
+    setDirectUploadingUrl(targetImageUrl);
     setIsUploadingVideo(true);
     setVideoMsg('מעלה סרטון AI לענן...');
     setVideoUploadProgress(25);
@@ -873,52 +898,90 @@ export default function AdminPage() {
                     </div>
                   ) : (
                     <div>
-                      {item.aiVideoUrl ? (
+                      {directUploadingUrl === item.url ? (
+                        <div style={{
+                          margin: '6px 0',
+                          background: 'rgba(245, 158, 11, 0.15)',
+                          border: '1px solid #f59e0b',
+                          borderRadius: '8px',
+                          padding: '8px',
+                          fontSize: '0.82rem',
+                          fontWeight: 700,
+                          color: '#d97706',
+                          textAlign: 'center',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                            <span className="loader" style={{ width: '16px', height: '16px', borderWidth: '2px' }} />
+                            <span>מעלה סרטון AI לענן... {videoUploadProgress > 0 && `${videoUploadProgress}%`}</span>
+                          </div>
+                        </div>
+                      ) : item.aiVideoUrl ? (
                         <div style={{
                           margin: '6px 0',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
-                          background: 'rgba(245, 158, 11, 0.12)',
-                          border: '1px solid rgba(245, 158, 11, 0.4)',
+                          background: '#fef3c7',
+                          border: '1px solid #fde68a',
                           borderRadius: '8px',
-                          padding: '4px 8px',
+                          padding: '5px 8px',
                           fontSize: '0.8rem',
                           fontWeight: 700,
-                          color: '#d97706',
+                          color: '#b45309',
                         }}>
-                          <span>🎬 סרטון AI מקושר</span>
-                          <button
-                            type="button"
-                            onClick={() => setActiveModalItem(item)}
-                            style={{ background: 'none', border: 'none', color: '#b45309', cursor: 'pointer', textDecoration: 'underline', fontWeight: 700, fontSize: '0.8rem' }}
-                          >
-                            צפה / נהל
-                          </button>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span>🎬</span>
+                            <span>סרטון AI מקושר</span>
+                          </div>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button
+                              type="button"
+                              onClick={() => setActiveModalItem(item)}
+                              style={{ background: 'none', border: 'none', color: '#b45309', cursor: 'pointer', textDecoration: 'underline', fontWeight: 700, fontSize: '0.8rem' }}
+                            >
+                              צפה
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleTriggerDirectVideoUpload(item.url)}
+                              style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', textDecoration: 'underline', fontWeight: 700, fontSize: '0.8rem' }}
+                            >
+                              החלף
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveAiVideo(item.url)}
+                              style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', textDecoration: 'underline', fontWeight: 700, fontSize: '0.8rem' }}
+                            >
+                              הסר
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         <button
                           type="button"
-                          onClick={() => setActiveModalItem(item)}
+                          onClick={() => handleTriggerDirectVideoUpload(item.url)}
                           style={{
                             margin: '6px 0',
                             width: '100%',
-                            background: '#f8fafc',
-                            border: '1px dashed #94a3b8',
+                            background: 'linear-gradient(135deg, #fef3c7 0%, #ecfdf5 100%)',
+                            border: '1.5px dashed #10b981',
                             borderRadius: '8px',
-                            padding: '5px 8px',
-                            fontSize: '0.8rem',
-                            fontWeight: 600,
-                            color: '#475569',
+                            padding: '7px 10px',
+                            fontSize: '0.85rem',
+                            fontWeight: 700,
+                            color: '#047857',
                             cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            gap: '4px',
+                            gap: '6px',
+                            boxShadow: '0 2px 6px rgba(16, 185, 129, 0.12)',
                           }}
+                          title="לחצו לבחירת קובץ וידאו מהמחשב או הטלפון"
                         >
-                          <span>➕</span>
-                          <span>הוסף סרטון AI</span>
+                          <span style={{ fontSize: '1rem' }}>➕</span>
+                          <span>הוסף סרטון AI (העלאת קובץ)</span>
                         </button>
                       )}
 
@@ -1103,7 +1166,14 @@ export default function AdminPage() {
                   </div>
                 )}
 
-                {/* Hidden video file input */}
+                {/* Hidden video file inputs */}
+                <input
+                  type="file"
+                  ref={directVideoFileInputRef}
+                  accept="video/mp4,video/webm,video/quicktime,video/*"
+                  style={{ display: 'none' }}
+                  onChange={handleDirectFileSelected}
+                />
                 <input
                   type="file"
                   ref={videoFileInputRef}

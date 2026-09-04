@@ -14,6 +14,7 @@ export async function GET() {
       fullName: item.fullName || [item.firstName, item.lastName].filter(Boolean).join(' ') || 'תושב/ת תמרת',
       greeting: item.greeting || '',
       time: item.time,
+      aiVideoUrl: item.aiVideoUrl || undefined,
     }));
 
     return NextResponse.json(

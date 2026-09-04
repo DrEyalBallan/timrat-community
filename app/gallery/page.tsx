@@ -439,6 +439,23 @@ export default function FullscreenGalleryPage() {
                 )}
               </div>
 
+              {/* Dedicated Floating AI Video Button on the Side of the Screen / Image */}
+              {activeItem.aiVideoUrl && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openAiVideo(activeItem.aiVideoUrl!);
+                  }}
+                  className="gallery-side-ai-btn animate-fade-in"
+                  title="לחצו לצפייה בסרטון AI של תמונה זו"
+                >
+                  <span className="ai-side-sparkle">✨</span>
+                  <span className="ai-side-title">סרטון AI</span>
+                  <span className="ai-side-play">▶</span>
+                </button>
+              )}
+
               {/* Top Right: Timrat Logo Watermark Badge */}
               <div className="gallery-top-right-logo">
                 <img src="/logo.jpeg" alt="תמרת" />
