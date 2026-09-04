@@ -14,6 +14,7 @@ export interface GalleryItem {
   token?: string;
   filename?: string;
   dataUrl?: string;
+  aiVideoUrl?: string;
 }
 
 let memoryStore: GalleryItem[] = [];
@@ -200,4 +201,40 @@ export async function reorderGalleryItems(orderUrls: string[]): Promise<void> {
   });
 
   await saveGalleryItems(newOrder);
+}
+
+export async function attachAiVideoToItem(imageUrl: string, videoUrl: string): Promise<GalleryItem | null> {
+  const items = await getGalleryItems();
+  let updatedItem: GalleryItem | null = null;
+  const updatedList = items.map((item) => {
+    if (item.url === imageUrl || item.id === imageUrl) {
+      updatedItem = { ...item, aiVideoUrl: videoUrl };
+      return updatedItem;
+    }
+    return item;
+  });
+
+  if (updatedItem) {
+    await saveGalleryItems(updatedList);
+  }
+  return updatedItem;
+}
+
+export async function removeAiVideoFromItem(imageUrl: string): Promise<boolean> {
+  const items = await getGalleryItems();
+  let found = false;
+  const updatedList = items.map((item) => {
+    if (item.url === imageUrl || item.id === imageUrl) {
+      found = true;
+      const copy = { ...item };
+      delete copy.aiVideoUrl;
+      return copy;
+    }
+    return item;
+  });
+
+  if (found) {
+    await saveGalleryItems(updatedList);
+  }
+  return found;
 }

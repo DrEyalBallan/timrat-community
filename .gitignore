@@ -12,3 +12,6 @@ yarn-error.log*
 .env*.local
 data/
 public/uploads/
+
+# Local Netlify folder
+.netlify

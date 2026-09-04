@@ -10,6 +10,7 @@ interface ImageItem {
   fullName: string;
   greeting: string;
   time: number;
+  aiVideoUrl?: string;
 }
 
 export default function FullscreenGalleryPage() {
@@ -19,9 +20,24 @@ export default function FullscreenGalleryPage() {
   const [slideDuration, setSlideDuration] = useState(6000); // 6 seconds per slide
   const [isLoading, setIsLoading] = useState(true);
   const [isUiVisible, setIsUiVisible] = useState(false);
+  const [activeAiVideoUrl, setActiveAiVideoUrl] = useState<string | null>(null);
+  const [wasPlayingBeforeVideo, setWasPlayingBeforeVideo] = useState(true);
 
   const prevImagesJsonRef = useRef<string>('');
   const hideUiTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const openAiVideo = (videoUrl: string) => {
+    setWasPlayingBeforeVideo(isPlaying);
+    setIsPlaying(false);
+    setActiveAiVideoUrl(videoUrl);
+  };
+
+  const closeAiVideo = () => {
+    setActiveAiVideoUrl(null);
+    if (wasPlayingBeforeVideo) {
+      setIsPlaying(true);
+    }
+  };
 
   // Fetch images from API with cache busting
   const fetchImages = async () => {
@@ -88,6 +104,8 @@ export default function FullscreenGalleryPage() {
         setIsPlaying((prev) => !prev);
       } else if (e.key === 'f' || e.key === 'F') {
         toggleFullscreen();
+      } else if (e.key === 'Escape') {
+        closeAiVideo();
       }
     };
 
@@ -265,6 +283,25 @@ export default function FullscreenGalleryPage() {
                     קהילת תמרת 🌿 שנה טובה
                   </div>
                 </div>
+
+                {/* AI Video Button on Slide */}
+                {activeItem.aiVideoUrl && (
+                  <div style={{ marginTop: '0.65rem', borderTop: '1px dashed rgba(255, 255, 255, 0.2)', paddingTop: '0.55rem' }}>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openAiVideo(activeItem.aiVideoUrl!);
+                      }}
+                      className="slide-ai-video-btn"
+                      title="לחצו לצפייה בסרטון AI"
+                    >
+                      <span className="ai-sparkle-icon">✨</span>
+                      <span className="ai-btn-title">סרטון AI</span>
+                      <span className="ai-play-triangle">▶</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Top Right: Timrat Logo Watermark Badge */}
@@ -363,6 +400,53 @@ export default function FullscreenGalleryPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* AI Video Modal Player in Gallery */}
+      {activeAiVideoUrl && (
+        <div
+          className="modal-overlay animate-fade-in"
+          style={{ zIndex: 100, background: 'rgba(0, 0, 0, 0.94)' }}
+          onClick={closeAiVideo}
+        >
+          <div
+            className="ai-video-modal-card animate-fade-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="modal-close-btn"
+              onClick={closeAiVideo}
+              title="סגירה וחזרה למצגת (Esc)"
+              aria-label="סגירה"
+            >
+              ✕
+            </button>
+            <div className="ai-video-player-container">
+              <video
+                src={activeAiVideoUrl}
+                controls
+                autoPlay
+                playsInline
+                loop
+                className="ai-video-screen"
+              />
+            </div>
+            <div className="ai-video-modal-bar">
+              <div className="ai-modal-badge">
+                <span className="ai-sparkle-icon">✨</span>
+                <span>סרטון AI – קהילת תמרת</span>
+              </div>
+              <button
+                type="button"
+                onClick={closeAiVideo}
+                className="btn-primary"
+                style={{ padding: '6px 16px', fontSize: '0.9rem', borderRadius: '20px' }}
+              >
+                חזרה למצגת ⤶
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </main>
