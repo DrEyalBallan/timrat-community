@@ -13,6 +13,14 @@ interface ImageItem {
   aiVideoUrl?: string;
 }
 
+interface MyUploadItem {
+  url: string;
+  token: string;
+  fullName: string;
+  greeting: string;
+  time: number;
+}
+
 export default function FullscreenGalleryPage() {
   const [images, setImages] = useState<ImageItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -22,6 +30,13 @@ export default function FullscreenGalleryPage() {
   const [isUiVisible, setIsUiVisible] = useState(false);
   const [activeAiVideoUrl, setActiveAiVideoUrl] = useState<string | null>(null);
   const [wasPlayingBeforeVideo, setWasPlayingBeforeVideo] = useState(true);
+
+  // User's own uploads
+  const [myUploads, setMyUploads] = useState<MyUploadItem[]>([]);
+  const [isMyUploadsOpen, setIsMyUploadsOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deletingUrl, setDeletingUrl] = useState<string | null>(null);
+  const [userToken, setUserToken] = useState<string>('');
 
   const prevImagesJsonRef = useRef<string>('');
   const hideUiTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -36,6 +51,121 @@ export default function FullscreenGalleryPage() {
     setActiveAiVideoUrl(null);
     if (wasPlayingBeforeVideo) {
       setIsPlaying(true);
+    }
+  };
+
+  // Sync user's own uploads from localStorage and server
+  useEffect(() => {
+    let token = localStorage.getItem('timrat_user_token');
+    if (token) setUserToken(token);
+
+    let localItems: MyUploadItem[] = [];
+    try {
+      const raw = localStorage.getItem('timrat_my_uploads');
+      if (raw) {
+        localItems = JSON.parse(raw);
+        if (Array.isArray(localItems)) {
+          setMyUploads(localItems);
+        }
+      }
+    } catch {}
+
+    const syncWithServer = async () => {
+      try {
+        const extraTokens = localItems.map((i) => i.token).filter(Boolean);
+        const uniqueTokens = Array.from(new Set([token, ...extraTokens].filter(Boolean))).join(',');
+        if (!uniqueTokens) return;
+        const res = await fetch(`/api/user/my-uploads?token=${encodeURIComponent(token || '')}&tokens=${encodeURIComponent(uniqueTokens)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.items)) {
+            const merged: MyUploadItem[] = data.items.map((srvItem: any) => {
+              const localMatch = localItems.find((l) => l.url === srvItem.url);
+              return {
+                url: srvItem.url,
+                token: localMatch?.token || token || '',
+                fullName: srvItem.fullName || localMatch?.fullName || 'תושב/ת תמרת',
+                greeting: srvItem.greeting || localMatch?.greeting || '',
+                time: srvItem.time || localMatch?.time || Date.now(),
+              };
+            });
+            setMyUploads(merged);
+            localStorage.setItem('timrat_my_uploads', JSON.stringify(merged));
+          }
+        }
+      } catch {}
+    };
+
+    syncWithServer();
+  }, []);
+
+  const handleDeleteAllUploads = async () => {
+    if (myUploads.length === 0) return;
+    if (!confirm(`האם אתם בטוחים שברצונכם למחוק את כל ${myUploads.length} התמונות והברכות שהעליתם?\n\nהן יוסרו מיד גם ממסך ההקרנה.`)) return;
+
+    setIsDeleting(true);
+    try {
+      const allTokens = Array.from(new Set([userToken, ...myUploads.map((i) => i.token)].filter(Boolean)));
+      const res = await fetch('/api/user/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: userToken || allTokens[0],
+          tokens: allTokens,
+          urls: myUploads.map((i) => i.url),
+          deleteAll: true,
+        }),
+      });
+
+      if (res.ok) {
+        setMyUploads([]);
+        try {
+          localStorage.removeItem('timrat_my_uploads');
+        } catch {}
+        setIsMyUploadsOpen(false);
+        fetchImages();
+        if (wasPlayingBeforeVideo) setIsPlaying(true);
+        alert('כל ההעלאות שלך נמחקו בהצלחה.');
+      } else {
+        alert('מחיקת התכנים נכשלה.');
+      }
+    } catch {
+      alert('שגיאה במחיקת התכנים.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteSingleUpload = async (item: MyUploadItem) => {
+    if (!confirm('האם אתם בטוחים שברצונכם למחוק תמונה וברכה זו?')) return;
+
+    setDeletingUrl(item.url);
+    try {
+      const res = await fetch('/api/user/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: item.url,
+          token: item.token || userToken,
+          tokens: [userToken, item.token].filter(Boolean),
+        }),
+      });
+
+      if (res.ok) {
+        const nextUploads = myUploads.filter((i) => i.url !== item.url);
+        setMyUploads(nextUploads);
+        try {
+          localStorage.setItem('timrat_my_uploads', JSON.stringify(nextUploads));
+        } catch {}
+        fetchImages();
+        alert('התמונה והברכה נמחקו בהצלחה.');
+      } else {
+        alert('מחיקת התמונה נכשלה.');
+      }
+    } catch {
+      alert('שגיאה במחיקת התמונה.');
+    } finally {
+      setDeletingUrl(null);
     }
   };
 
@@ -105,7 +235,12 @@ export default function FullscreenGalleryPage() {
       } else if (e.key === 'f' || e.key === 'F') {
         toggleFullscreen();
       } else if (e.key === 'Escape') {
-        closeAiVideo();
+        if (isMyUploadsOpen) {
+          setIsMyUploadsOpen(false);
+          if (wasPlayingBeforeVideo) setIsPlaying(true);
+        } else {
+          closeAiVideo();
+        }
       }
     };
 
@@ -321,6 +456,27 @@ export default function FullscreenGalleryPage() {
                   <span>להוספת ברכה</span>
                 </a>
 
+                {myUploads.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWasPlayingBeforeVideo(isPlaying);
+                      setIsPlaying(false);
+                      setIsMyUploadsOpen(true);
+                    }}
+                    className="gallery-back-pill"
+                    style={{
+                      borderColor: 'rgba(74, 222, 128, 0.45)',
+                      color: '#4ade80',
+                      cursor: 'pointer',
+                    }}
+                    title="צפייה וניהול ההעלאות שלי"
+                  >
+                    <span style={{ fontSize: '1rem', lineHeight: 1 }}>📸</span>
+                    <span>ההעלאות שלי ({myUploads.length})</span>
+                  </button>
+                )}
+
                 <div className="gallery-counter-pill">
                   {currentIndex + 1} / {images.length}
                 </div>
@@ -445,6 +601,111 @@ export default function FullscreenGalleryPage() {
               >
                 חזרה למצגת ⤶
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* "My Uploads" Management Modal in Gallery */}
+      {isMyUploadsOpen && (
+        <div
+          className="my-uploads-modal-overlay"
+          style={{ zIndex: 120 }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setIsMyUploadsOpen(false);
+              if (wasPlayingBeforeVideo) setIsPlaying(true);
+            }
+          }}
+        >
+          <div className="my-uploads-modal-card">
+            <div className="my-uploads-header">
+              <div className="my-uploads-title">
+                <span>📸</span>
+                <span>ההעלאות שלי</span>
+                <span className="my-uploads-count-badge">{myUploads.length}</span>
+              </div>
+              <button
+                type="button"
+                className="modal-close-btn"
+                onClick={() => {
+                  setIsMyUploadsOpen(false);
+                  if (wasPlayingBeforeVideo) setIsPlaying(true);
+                }}
+                title="סגירה"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="my-uploads-body">
+              {myUploads.length === 0 ? (
+                <div className="my-uploads-empty">
+                  <div className="my-uploads-empty-icon">📭</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f8fafc' }}>
+                    לא נמצאו העלאות פעילות ממכשיר זה
+                  </div>
+                  <a
+                    href="/"
+                    className="btn-primary"
+                    style={{ marginTop: '1rem', padding: '0.6rem 1.2rem', fontSize: '0.95rem', textDecoration: 'none' }}
+                  >
+                    העלאת ברכה ראשונה ✨
+                  </a>
+                </div>
+              ) : (
+                <>
+                  <div className="delete-all-banner">
+                    <button
+                      type="button"
+                      className="btn-delete-all"
+                      onClick={handleDeleteAllUploads}
+                      disabled={isDeleting}
+                    >
+                      <span>🗑️</span>
+                      <span>
+                        {isDeleting
+                          ? 'מוחק את כל ההעלאות...'
+                          : `מחק את כל ההעלאות שלי (${myUploads.length} תמונות)`}
+                      </span>
+                    </button>
+                    <div className="delete-all-banner-text">
+                      ⚠️ לחיצה על כפתור זה תמחק לצמיתות את כל התמונות והברכות שהעליתם, והן יוסרו מיד ממסך ההקרנה.
+                    </div>
+                  </div>
+
+                  <div className="my-uploads-list">
+                    {myUploads.map((item) => (
+                      <div className="my-upload-card" key={item.url}>
+                        <img src={item.url} alt="העלאה שלי" className="my-upload-thumb" />
+                        <div className="my-upload-details">
+                          <div className="my-upload-name">{item.fullName}</div>
+                          <div className="my-upload-greeting" title={item.greeting}>
+                            "{item.greeting}"
+                          </div>
+                          <div className="my-upload-time">
+                            {new Date(item.time).toLocaleDateString('he-IL', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              day: 'numeric',
+                              month: 'numeric',
+                            })}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="my-upload-delete-btn"
+                          onClick={() => handleDeleteSingleUpload(item)}
+                          disabled={deletingUrl === item.url || isDeleting}
+                          title="מחק תמונה זו"
+                        >
+                          {deletingUrl === item.url ? 'מוחק...' : '🗑️ מחק'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

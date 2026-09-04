@@ -180,6 +180,59 @@ export async function deleteGalleryItemByToken(url: string, token: string): Prom
   return true;
 }
 
+export async function getGalleryItemsByToken(token: string, additionalTokens?: string[]): Promise<GalleryItem[]> {
+  const items = await getGalleryItems();
+  const tokenSet = new Set<string>();
+  if (token && token.trim()) tokenSet.add(token.trim());
+  if (Array.isArray(additionalTokens)) {
+    additionalTokens.forEach((t) => {
+      if (t && t.trim()) tokenSet.add(t.trim());
+    });
+  }
+  if (tokenSet.size === 0) return [];
+  return items.filter((item) => item.token && tokenSet.has(item.token));
+}
+
+export async function deleteUserGalleryItems(options: {
+  token?: string;
+  tokens?: string[];
+  urls?: string[];
+  deleteAll?: boolean;
+}): Promise<string[]> {
+  const items = await getGalleryItems();
+  const validTokens = new Set<string>();
+  if (options.token && options.token.trim()) validTokens.add(options.token.trim());
+  if (Array.isArray(options.tokens)) {
+    options.tokens.forEach((t) => {
+      if (t && t.trim()) validTokens.add(t.trim());
+    });
+  }
+
+  const requestedUrls = Array.isArray(options.urls) && options.urls.length > 0 ? new Set(options.urls) : null;
+  const toDeleteUrls: string[] = [];
+
+  for (const item of items) {
+    const hasMatchingToken = Boolean(item.token && validTokens.has(item.token));
+    const hasMatchingUrl = Boolean(requestedUrls && requestedUrls.has(item.url));
+
+    if (options.deleteAll) {
+      if (hasMatchingToken || (hasMatchingUrl && item.token && validTokens.has(item.token))) {
+        toDeleteUrls.push(item.url);
+      }
+    } else {
+      if (hasMatchingUrl && hasMatchingToken) {
+        toDeleteUrls.push(item.url);
+      }
+    }
+  }
+
+  if (toDeleteUrls.length > 0) {
+    await deleteGalleryItemsByUrls(toDeleteUrls);
+  }
+
+  return toDeleteUrls;
+}
+
 export async function reorderGalleryItems(orderUrls: string[]): Promise<void> {
   const items = await getGalleryItems();
   const itemMap = new Map<string, GalleryItem>();
