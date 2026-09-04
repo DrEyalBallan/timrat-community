@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { uploadMediaWithProgress } from '@/lib/clientUpload';
+import { uploadMediaWithProgress, uploadVideoToCloudinary } from '@/lib/clientUpload';
 import { isMediaVideo } from '@/lib/mediaUtils';
 
 interface ImageItem {
@@ -437,111 +437,88 @@ export default function AdminPage() {
     }
   };
 
-  const handleUploadAiVideo = async (targetImageUrl: string, file: File | null, customUrl: string) => {
+  const handleUploadAiVideo = async (targetImageUrl: string | string[], file: File | null, customUrl: string) => {
+    const isMultiple = Array.isArray(targetImageUrl);
+    const targetUrls = isMultiple ? targetImageUrl : [targetImageUrl];
+
+    if (targetUrls.length === 0) return;
     if (!file && !customUrl.trim()) {
-      setVideoMsg('נא לבחור קובץ וידאו מהמחשב או להזין קישור תקין');
+      alert('נא לבחור קובץ וידאו מהמחשב או להזין קישור תקין');
       return;
     }
 
-    setDirectUploadingUrl(targetImageUrl);
+    const firstUrl = targetUrls[0];
+    setDirectUploadingUrl(isMultiple ? 'bulk' : firstUrl);
     setIsUploadingVideo(true);
-    setVideoMsg('מעלה סרטון AI לענן...');
-    setVideoUploadProgress(20);
+    setVideoMsg('מעלה סרטון וידאו לענן...');
+    setVideoUploadProgress(10);
 
     let uploadedVideoUrl = customUrl.trim();
 
-    // Try direct signed upload to Cloudinary for files
     if (file) {
       try {
-        const signRes = await fetch('/api/cloudinary/sign', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ folder: 'timrat-community/ai-videos', tags: 'timrat_ai_video' }),
+        uploadedVideoUrl = await uploadVideoToCloudinary(file, (pct) => {
+          setVideoUploadProgress(pct);
         });
-        if (signRes.ok) {
-          const { signature, timestamp, apiKey, cloudName, folder, tags } = await signRes.json();
-          const cldForm = new FormData();
-          cldForm.append('file', file);
-          cldForm.append('api_key', apiKey);
-          cldForm.append('timestamp', timestamp.toString());
-          cldForm.append('folder', folder);
-          cldForm.append('tags', tags);
-          cldForm.append('signature', signature);
-
-          const cldRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/video/upload`, {
-            method: 'POST',
-            body: cldForm,
-          });
-          if (cldRes.ok) {
-            const cldData = await cldRes.json();
-            uploadedVideoUrl = cldData.secure_url || cldData.url;
-            setVideoUploadProgress(80);
-          }
-        }
-      } catch (e) {
-        console.warn('Direct AI video upload fallback to server proxy:', e);
+      } catch (err: any) {
+        console.warn('Direct upload error:', err);
+        alert('⚠️ שגיאה בהעלאת הווידאו: ' + (err.message || 'ההעלאה נכשלה'));
+        setIsUploadingVideo(false);
+        setDirectUploadingUrl(null);
+        setVideoUploadProgress(0);
+        return;
       }
     }
 
     try {
-      let res: Response;
-      if (uploadedVideoUrl) {
-        res = await fetch('/api/admin/video', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            password,
-            imageUrl: targetImageUrl,
-            action: 'attach',
-            videoUrl: uploadedVideoUrl,
-          }),
-        });
-      } else {
-        const formData = new FormData();
-        formData.append('password', password);
-        formData.append('imageUrl', targetImageUrl);
-        formData.append('action', 'attach');
-        if (file) formData.append('file', file);
-        res = await fetch('/api/admin/video', {
-          method: 'POST',
-          body: formData,
-        });
-      }
+      const res = await fetch('/api/admin/video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          password,
+          imageUrls: targetUrls,
+          action: 'attach',
+          videoUrl: uploadedVideoUrl,
+        }),
+      });
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || 'ההעלאה נכשלה');
+        throw new Error(errData.error || 'צירוף הסרטון נכשל');
       }
 
-      const data = await res.json();
-      const newVideoUrl = data.aiVideoUrl || uploadedVideoUrl;
-
-      setVideoUploadProgress(100);
+      const targetSet = new Set(targetUrls);
       setImages((prev) =>
         prev.map((img) =>
-          img.url === targetImageUrl ? { ...img, aiVideoUrl: newVideoUrl } : img
+          targetSet.has(img.url) ? { ...img, aiVideoUrl: uploadedVideoUrl } : img
         )
       );
 
-      if (activeModalItem?.url === targetImageUrl) {
-        setActiveModalItem((prev) => (prev ? { ...prev, aiVideoUrl: newVideoUrl } : null));
+      if (activeModalItem && targetSet.has(activeModalItem.url)) {
+        setActiveModalItem((prev) => (prev ? { ...prev, aiVideoUrl: uploadedVideoUrl } : null));
       }
 
-      setVideoMsg('✅ סרטון ה-AI נשמר בהצלחה!');
+      setVideoMsg('✅ סרטון הווידאו נשמר בהצלחה!');
       setSelectedVideoFile(null);
       setVideoUrlInput('');
       if (videoFileInputRef.current) videoFileInputRef.current.value = '';
+      alert(isMultiple ? `✅ הסרטון צורף בהצלחה ל-${targetUrls.length} תמונות!` : '✅ הסרטון צורף בהצלחה לתמונה!');
       setTimeout(() => setVideoMsg(''), 3000);
     } catch (err: any) {
-      setVideoMsg('⚠️ ' + (err.message || 'שגיאה בהעלאת הווידאו'));
+      setVideoMsg('⚠️ ' + (err.message || 'שגיאה בצירוף הווידאו'));
+      alert('⚠️ ' + (err.message || 'שגיאה בצירוף הווידאו'));
     } finally {
       setIsUploadingVideo(false);
+      setDirectUploadingUrl(null);
       setVideoUploadProgress(0);
     }
   };
 
-  const handleRemoveAiVideo = async (targetImageUrl: string) => {
-    if (!confirm('האם אתם בטוחים שברצונכם להסיר את סרטון ה-AI מתמונה זו?')) return;
+  const handleRemoveAiVideo = async (targetImageUrl: string | string[]) => {
+    const isMultiple = Array.isArray(targetImageUrl);
+    const targetUrls = isMultiple ? targetImageUrl : [targetImageUrl];
+    if (!confirm(`האם אתם בטוחים שברצונכם להסיר את סרטון הווידאו מ-${isMultiple ? targetUrls.length + ' תמונות' : 'תמונה זו'}?`)) return;
+
     setIsUploadingVideo(true);
     setVideoMsg('מסיר סרטון...');
     try {
@@ -550,15 +527,16 @@ export default function AdminPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           password,
-          imageUrl: targetImageUrl,
+          imageUrls: targetUrls,
           action: 'remove',
         }),
       });
 
       if (res.ok) {
+        const targetSet = new Set(targetUrls);
         setImages((prev) =>
           prev.map((img) => {
-            if (img.url === targetImageUrl) {
+            if (targetSet.has(img.url)) {
               const copy = { ...img };
               delete copy.aiVideoUrl;
               return copy;
@@ -566,7 +544,7 @@ export default function AdminPage() {
             return img;
           })
         );
-        if (activeModalItem?.url === targetImageUrl) {
+        if (activeModalItem && targetSet.has(activeModalItem.url)) {
           setActiveModalItem((prev) => {
             if (!prev) return null;
             const copy = { ...prev };
@@ -574,15 +552,13 @@ export default function AdminPage() {
             return copy;
           });
         }
-        setVideoMsg('✅ סרטון ה-AI הוסר בהצלחה');
-        setTimeout(() => setVideoMsg(''), 2500);
-      } else {
-        alert('שגיאה בהסרת סרטון ה-AI');
+        alert('✅ הסרטון הוסר בהצלחה');
       }
-    } catch {
-      alert('שגיאה בתקשורת עם השרת');
+    } catch (e) {
+      alert('שגיאה בהסרת הסרטון');
     } finally {
       setIsUploadingVideo(false);
+      setVideoMsg('');
     }
   };
 
@@ -1038,7 +1014,7 @@ export default function AdminPage() {
         </div>
 
         {!isReorderMode && (
-          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <button
               className="btn-secondary"
               onClick={handleSelectAll}
@@ -1048,14 +1024,113 @@ export default function AdminPage() {
             </button>
 
             {selectedUrls.size > 0 && (
-              <button
-                className="admin-delete-btn"
-                style={{ width: 'auto', padding: '6px 16px' }}
-                onClick={handleDeleteSelected}
-                disabled={isBulkDeleting}
+              <>
+                <label
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: '#ffffff',
+                    padding: '6px 14px',
+                    borderRadius: '10px',
+                    fontWeight: 700,
+                    fontSize: '0.88rem',
+                    cursor: isUploadingVideo ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 2px 6px rgba(16, 185, 129, 0.3)',
+                  }}
+                  title="העלה סרטון מהמחשב וקשר אותו לתמונות שנבחרו"
+                >
+                  <input
+                    type="file"
+                    accept="video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
+                    style={{ display: 'none' }}
+                    disabled={isUploadingVideo}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        handleUploadAiVideo(Array.from(selectedUrls), file, '');
+                        e.target.value = '';
+                      }
+                    }}
+                  />
+                  <span>🎬</span>
+                  <span>צרף סרטון מהמחשב ל-{selectedUrls.size} הנבחרים</span>
+                </label>
+
+                <button
+                  className="admin-delete-btn"
+                  style={{ width: 'auto', padding: '6px 16px' }}
+                  onClick={handleDeleteSelected}
+                  disabled={isBulkDeleting}
+                >
+                  {isBulkDeleting ? 'מוחק...' : `🗑️ מחק ${selectedUrls.size} נבחרים`}
+                </button>
+              </>
+            )}
+
+            {images.length > 0 && selectedUrls.size === 0 && (
+              <label
+                style={{
+                  background: '#f8fafc',
+                  border: '1.5px solid #cbd5e1',
+                  color: '#1e293b',
+                  padding: '6px 14px',
+                  borderRadius: '10px',
+                  fontWeight: 700,
+                  fontSize: '0.88rem',
+                  cursor: isUploadingVideo ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+                title="העלה סרטון מהמחשב וקשר אותו לכל התמונות של התושבים"
               >
-                {isBulkDeleting ? 'מוחק...' : `🗑️ מחק ${selectedUrls.size} נבחרים`}
-              </button>
+                <input
+                  type="file"
+                  accept="video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
+                  style={{ display: 'none' }}
+                  disabled={isUploadingVideo}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      if (confirm(`האם להעלות סרטון זה מהמחשב ולקשר אותו לכל ${images.length} התמונות של התושבים?`)) {
+                        handleUploadAiVideo(images.map((img) => img.url), file, '');
+                      }
+                      e.target.value = '';
+                    }
+                  }}
+                />
+                <span>🎬</span>
+                <span>צרף סרטון מהמחשב לכל {images.length} התמונות</span>
+              </label>
+            )}
+          </div>
+        )}
+
+        {directUploadingUrl === 'bulk' && (
+          <div
+            style={{
+              width: '100%',
+              background: '#ecfdf5',
+              border: '1.5px solid #10b981',
+              borderRadius: '10px',
+              padding: '10px 16px',
+              marginTop: '0.75rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              boxSizing: 'border-box',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#065f46', fontWeight: 700, fontSize: '0.9rem' }}>
+              <span className="loader" style={{ width: '18px', height: '18px', borderWidth: '2px' }} />
+              <span>מעלה סרטון מהמחשב לענן ומקשר לתמונות... {videoUploadProgress > 0 && `${videoUploadProgress}%`}</span>
+            </div>
+            {videoUploadProgress > 0 && (
+              <div style={{ width: '180px', height: '8px', background: '#d1fae5', borderRadius: '4px', overflow: 'hidden' }}>
+                <div style={{ height: '100%', background: '#10b981', width: `${videoUploadProgress}%`, transition: 'width 0.2s' }} />
+              </div>
             )}
           </div>
         )}
@@ -1092,6 +1167,97 @@ export default function AdminPage() {
                 <div className="grid-card-greeting" style={{ color: '#0f172a' }}>
                   "{item.greeting}"
                 </div>
+                {directUploadingUrl === item.url ? (
+                  <div style={{
+                    margin: '6px 0',
+                    background: '#fef3c7',
+                    border: '1px solid #f59e0b',
+                    borderRadius: '6px',
+                    padding: '4px 6px',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    color: '#b45309',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px',
+                  }}>
+                    <span className="loader" style={{ width: '12px', height: '12px', borderWidth: '2px' }} />
+                    <span>מעלה... {videoUploadProgress > 0 && `${videoUploadProgress}%`}</span>
+                  </div>
+                ) : item.aiVideoUrl ? (
+                  <div style={{
+                    margin: '4px 0',
+                    background: '#fef3c7',
+                    border: '1px solid #fde68a',
+                    borderRadius: '6px',
+                    padding: '3px 6px',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    color: '#b45309',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}>
+                    <span>🎬 סרטון מקושר</span>
+                    <label
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ cursor: 'pointer', color: '#2563eb', textDecoration: 'underline' }}
+                      title="החלף סרטון מהמחשב"
+                    >
+                      <input
+                        type="file"
+                        accept="video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleUploadAiVideo(item.url, file, '');
+                            e.target.value = '';
+                          }
+                        }}
+                      />
+                      החלף
+                    </label>
+                  </div>
+                ) : (
+                  <div style={{ margin: '4px 0' }}>
+                    <label
+                      onClick={(e) => e.stopPropagation()}
+                      style={{
+                        background: '#ecfdf5',
+                        border: '1px solid #10b981',
+                        color: '#047857',
+                        borderRadius: '6px',
+                        padding: '3px 8px',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        width: '100%',
+                        justifyContent: 'center',
+                        boxSizing: 'border-box',
+                      }}
+                      title="העלאת סרטון מהמחשב לתמונה זו"
+                    >
+                      <input
+                        type="file"
+                        accept="video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            handleUploadAiVideo(item.url, file, '');
+                            e.target.value = '';
+                          }
+                        }}
+                      />
+                      <span>🎬 צרף סרטון מהמחשב</span>
+                    </label>
+                  </div>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div className="grid-card-author" style={{ color: '#15803d' }}>
                     <span>✍️</span>
@@ -1264,7 +1430,7 @@ export default function AdminPage() {
                         }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
                             <span className="loader" style={{ width: '16px', height: '16px', borderWidth: '2px' }} />
-                            <span>מעלה סרטון AI לענן... {videoUploadProgress > 0 && `${videoUploadProgress}%`}</span>
+                            <span>מעלה סרטון מהמחשב לענן... {videoUploadProgress > 0 && `${videoUploadProgress}%`}</span>
                           </div>
                         </div>
                       ) : item.aiVideoUrl ? (
@@ -1283,7 +1449,7 @@ export default function AdminPage() {
                         }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <span>🎬</span>
-                            <span>סרטון AI מקושר</span>
+                            <span>סרטון מקושר</span>
                           </div>
                           <div style={{ display: 'flex', gap: '6px' }}>
                             <button
@@ -1303,7 +1469,7 @@ export default function AdminPage() {
                                 display: 'inline-flex',
                                 alignItems: 'center',
                               }}
-                              title="החלפת סרטון AI קיים בסרטון חדש"
+                              title="החלפת סרטון קיים בסרטון חדש מהמחשב"
                             >
                               <input
                                 type="file"
@@ -1317,7 +1483,7 @@ export default function AdminPage() {
                                   }
                                 }}
                               />
-                              החלף
+                              החלף סרטון מהמחשב
                             </label>
                             <button
                               type="button"
@@ -1333,7 +1499,7 @@ export default function AdminPage() {
                           style={{
                             margin: '6px 0',
                             width: '100%',
-                            background: 'linear-gradient(135deg, #fef3c7 0%, #ecfdf5 100%)',
+                            background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)',
                             border: '1.5px dashed #10b981',
                             borderRadius: '8px',
                             padding: '8px 10px',
@@ -1348,7 +1514,7 @@ export default function AdminPage() {
                             boxShadow: '0 2px 6px rgba(16, 185, 129, 0.12)',
                             boxSizing: 'border-box',
                           }}
-                          title="לחצו לבחירת קובץ וידאו מהמחשב או הטלפון"
+                          title="לחצו לבחירת קובץ וידאו מהמחשב לתמונה זו"
                         >
                           <input
                             type="file"
@@ -1363,7 +1529,7 @@ export default function AdminPage() {
                             }}
                           />
                           <span style={{ fontSize: '1rem' }}>🎬</span>
-                          <span>➕ העלאת סרטון AI (בחר קובץ מהמכשיר)</span>
+                          <span>העלאת סרטון מהמחשב לתמונה זו</span>
                         </label>
                       )}
 
@@ -1459,7 +1625,7 @@ export default function AdminPage() {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 800, color: '#0f172a', fontSize: '1rem' }}>
                     <span>🎬</span>
-                    <span>סרטון AI מקושר לתמונה זו</span>
+                    <span>סרטון וידאו מקושר לתמונה זו</span>
                   </div>
                   {activeModalItem.aiVideoUrl && (
                     <span style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', padding: '2px 8px', borderRadius: '20px', fontSize: '0.78rem', fontWeight: 700 }}>
@@ -1494,12 +1660,12 @@ export default function AdminPage() {
                           cursor: 'pointer',
                         }}
                       >
-                        🗑️ הסרת סרטון ה-AI
+                        🗑️ הסרת הסרטון
                       </button>
                       <label
                         className="btn-secondary"
-                        style={{ padding: '6px 12px', fontSize: '0.85rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}
-                        title="בחירת קובץ וידאו חדש מהמכשיר"
+                        style={{ padding: '6px 12px', fontSize: '0.85rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        title="בחירת קובץ וידאו חדש מהמחשב"
                       >
                         <input
                           type="file"
@@ -1514,29 +1680,29 @@ export default function AdminPage() {
                             }
                           }}
                         />
-                        🔄 החלפת סרטון ה-AI
+                        🔄 החלפת סרטון מהמחשב
                       </label>
                     </div>
                   </div>
                 ) : (
                   <div>
                     <p style={{ color: '#64748b', fontSize: '0.88rem', marginBottom: '0.75rem', lineHeight: '1.4' }}>
-                      העלו סרטון שנוצר ב-AI (כגון Luma, Kling, Runway, Pika) המתאים לתמונה זו. בגלריה ובמצגת יופיע כפתור <strong>"סרטון AI"</strong> שינגן אותו למבקרים.
+                      העלו סרטון וידאו ישירות מהמחשב שלכם (MP4, MOV וכו') או הדביקו קישור. בגלריה ובהקרנה יוצג כפתור צפייה בסרטון.
                     </p>
 
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
                       <label
                         className="btn-primary"
                         style={{
-                          padding: '7px 14px',
-                          fontSize: '0.88rem',
+                          padding: '8px 16px',
+                          fontSize: '0.9rem',
                           borderRadius: '10px',
                           cursor: 'pointer',
                           display: 'inline-flex',
                           alignItems: 'center',
                           gap: '6px',
                         }}
-                        title="בחירת קובץ וידאו מהמחשב או הטלפון"
+                        title="בחירת קובץ וידאו מהמחשב"
                       >
                         <input
                           type="file"
@@ -1551,7 +1717,7 @@ export default function AdminPage() {
                             }
                           }}
                         />
-                        📁 בחירת קובץ וידאו מהמחשב/טלפון
+                        📁 בחירת סרטון מהמחשב שלי
                       </label>
 
                       <span style={{ alignSelf: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>או</span>

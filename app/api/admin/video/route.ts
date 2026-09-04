@@ -16,6 +16,8 @@ export async function POST(request: NextRequest) {
     const contentType = request.headers.get('content-type') || '';
     let password = '';
     let imageUrl = '';
+    let targetUrls: string[] = [];
+    let attachToAll = false;
     let action = 'attach';
     let videoUrl = '';
     let videoBuffer: Buffer | null = null;
@@ -38,26 +40,38 @@ export async function POST(request: NextRequest) {
       imageUrl = (body.imageUrl || '').trim();
       action = (body.action || 'attach').trim();
       videoUrl = (body.videoUrl || '').trim();
+
+      if (Array.isArray(body.imageUrls)) {
+        targetUrls = body.imageUrls.filter(Boolean);
+      } else if (body.attachToAll) {
+        attachToAll = true;
+      }
     }
 
     if (!password || !verifyAdminPassword(password)) {
       return NextResponse.json({ error: 'אין הרשאה: סיסמת מנהל שגויה' }, { status: 401 });
     }
 
-    if (!imageUrl) {
-      return NextResponse.json({ error: 'חסרה כתובת התמונה המיועדת' }, { status: 400 });
+    const items = await getGalleryItems();
+    if (attachToAll) {
+      targetUrls = items.map((i) => i.url);
+    } else if (targetUrls.length === 0 && imageUrl) {
+      targetUrls = [imageUrl];
     }
 
-    // Find the item to get its public ID (filename) if available
-    const items = await getGalleryItems();
-    const existingItem = items.find((i) => i.url === imageUrl || i.id === imageUrl);
+    if (targetUrls.length === 0) {
+      return NextResponse.json({ error: 'לא נבחרו תמונות לצירוף הסרטון' }, { status: 400 });
+    }
 
     if (action === 'remove') {
-      await removeAiVideoFromItem(imageUrl);
-      if (existingItem?.filename) {
-        await updateCloudinaryItemAiVideo(existingItem.filename, undefined);
+      for (const tUrl of targetUrls) {
+        await removeAiVideoFromItem(tUrl);
+        const existingItem = items.find((i) => i.url === tUrl || i.id === tUrl);
+        if (existingItem?.filename) {
+          await updateCloudinaryItemAiVideo(existingItem.filename, undefined);
+        }
       }
-      return NextResponse.json({ success: true, message: 'סרטון ה-AI הוסר בהצלחה' });
+      return NextResponse.json({ success: true, message: 'הסרטון הוסר בהצלחה', count: targetUrls.length });
     }
 
     // If uploading a video file
@@ -84,15 +98,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'לא נבחר קובץ וידאו ולא הוזן קישור תקין' }, { status: 400 });
     }
 
-    const updatedItem = await attachAiVideoToItem(imageUrl, videoUrl);
-
-    if (existingItem?.filename) {
-      await updateCloudinaryItemAiVideo(existingItem.filename, videoUrl);
+    let lastUpdatedItem = null;
+    for (const tUrl of targetUrls) {
+      const updated = await attachAiVideoToItem(tUrl, videoUrl);
+      if (updated) lastUpdatedItem = updated;
+      const existingItem = items.find((i) => i.url === tUrl || i.id === tUrl);
+      if (existingItem?.filename) {
+        await updateCloudinaryItemAiVideo(existingItem.filename, videoUrl);
+      }
     }
 
     return NextResponse.json({
       success: true,
-      item: updatedItem,
+      item: lastUpdatedItem,
+      count: targetUrls.length,
       aiVideoUrl: videoUrl,
     });
   } catch (error: any) {

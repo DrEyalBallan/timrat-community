@@ -134,3 +134,68 @@ export async function uploadMediaWithProgress(options: UploadOptions): Promise<U
   if (onProgress) onProgress(100);
   return await fallbackRes.json();
 }
+
+/**
+ * Uploads a video file directly to Cloudinary (timrat-community/ai-videos)
+ * bypassing serverless body limits. Returns the secure URL.
+ */
+export async function uploadVideoToCloudinary(
+  file: File,
+  onProgress?: (percent: number) => void
+): Promise<string> {
+  const signRes = await fetch("/api/cloudinary/sign", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ folder: "timrat-community/ai-videos", tags: "timrat_ai_video" }),
+  });
+
+  if (!signRes.ok) {
+    throw new Error("Failed to get video upload signature");
+  }
+
+  const { signature, timestamp, apiKey, cloudName, folder, tags } = await signRes.json();
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("api_key", apiKey);
+  formData.append("timestamp", timestamp.toString());
+  formData.append("folder", folder);
+  formData.append("tags", tags);
+  formData.append("signature", signature);
+
+  return new Promise<string>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`);
+
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const pct = Math.round((e.loaded / e.total) * 100);
+          onProgress(pct);
+        }
+      };
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const json = JSON.parse(xhr.responseText);
+          resolve(json.secure_url || json.url);
+        } catch (err) {
+          reject(new Error("Invalid response from video upload"));
+        }
+      } else {
+        let msg = "Video upload failed";
+        try {
+          const errJson = JSON.parse(xhr.responseText);
+          msg = errJson.error?.message || msg;
+        } catch {}
+        reject(new Error(msg));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error("Network error uploading video"));
+    xhr.ontimeout = () => reject(new Error("Video upload timed out"));
+    xhr.send(formData);
+  });
+}
+
