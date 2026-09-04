@@ -89,7 +89,7 @@ export async function getGalleryItems(): Promise<GalleryItem[]> {
       if (cloudItems && Array.isArray(cloudItems)) {
         // Merge with memoryStore so local recent uploads aren't lost before Cloudinary indexes them
         const cloudIds = new Set(cloudItems.map(i => i.url));
-        const recentLocalOnly = memoryStore.filter(i => !cloudIds.has(i.url));
+        const recentLocalOnly = memoryStore.filter(i => !cloudIds.has(i.url) && (now - i.time < 60000));
         memoryStore = [...recentLocalOnly, ...cloudItems];
         isMemoryStoreInitialized = true;
         lastCloudinaryFetch = now;

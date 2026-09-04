@@ -71,14 +71,31 @@ export async function uploadBufferToCloudinary(
 
 export async function fetchAllCloudinaryGalleryItems(): Promise<GalleryItem[]> {
   try {
-    const result = await cloudinary.api.resources_by_tag('timrat_new_year', {
-      max_results: 500,
-      context: true,
-      tags: true,
-      direction: 'desc',
-    });
+    const [imageResult, videoResult] = await Promise.all([
+      cloudinary.api.resources_by_tag('timrat_new_year', {
+        resource_type: 'image',
+        max_results: 500,
+        context: true,
+        tags: true,
+        direction: 'desc',
+      }).catch((err) => {
+        console.warn('Error fetching image resources from Cloudinary:', err);
+        return { resources: [] };
+      }),
+      cloudinary.api.resources_by_tag('timrat_new_year', {
+        resource_type: 'video',
+        max_results: 500,
+        context: true,
+        tags: true,
+        direction: 'desc',
+      }).catch((err) => {
+        console.warn('Error fetching video resources from Cloudinary:', err);
+        return { resources: [] };
+      }),
+    ]);
 
-    const items: GalleryItem[] = (result.resources || []).map((res: any) => {
+    const allResources = [...(imageResult.resources || []), ...(videoResult.resources || [])];
+    const items: GalleryItem[] = allResources.map((res: any) => {
       const ctx = res.context?.custom || {};
       let firstName = '';
       let lastName = '';

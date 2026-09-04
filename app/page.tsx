@@ -115,11 +115,17 @@ export default function UserGreetingPage() {
     if (!file) return;
 
     setSelectedFile(file);
-    const reader = new FileReader();
-    reader.onload = () => {
-      setFilePreview(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+    const isVid = file.type.startsWith('video/') || !!file.name.match(/\.(mp4|mov|webm|ogg|m4v)$/i);
+    if (isVid) {
+      const objUrl = URL.createObjectURL(file);
+      setFilePreview(objUrl);
+    } else {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setFilePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
     setErrorMessage('');
   };
 
@@ -526,7 +532,7 @@ export default function UserGreetingPage() {
             {/* File Dropzone & Selector */}
             <input
               type="file"
-              accept="image/*,video/*"
+              accept="image/*,video/*,.mp4,.mov,.webm,.m4v,.jpeg,.jpg,.png,.heic"
               style={{ display: 'none' }}
               ref={fileInputRef}
               onChange={handleSelectFile}
@@ -538,19 +544,34 @@ export default function UserGreetingPage() {
             >
               {filePreview ? (
                 <div className="preview-container">
-                  <img src={filePreview} alt="תצוגה מקדימה" className="preview-img" />
+                  {selectedFile?.type?.startsWith('video/') || !!selectedFile?.name?.match(/\.(mp4|mov|webm|ogg|m4v)$/i) ? (
+                    <video
+                      src={filePreview}
+                      controls
+                      autoPlay
+                      muted
+                      playsInline
+                      className="preview-img"
+                      style={{ maxHeight: '280px', width: '100%', objectFit: 'contain', background: '#000', borderRadius: '12px' }}
+                    />
+                  ) : (
+                    <img src={filePreview} alt="תצוגה מקדימה" className="preview-img" />
+                  )}
                   <div className="preview-badge">
-                    📷 נבחרה תמונה: {selectedFile?.name} (לחצו להחלפה)
+                    {selectedFile?.type?.startsWith('video/') || !!selectedFile?.name?.match(/\.(mp4|mov|webm|ogg|m4v)$/i)
+                      ? `🎬 נבחר סרטון וידאו: ${selectedFile?.name}`
+                      : `📷 נבחרה תמונה: ${selectedFile?.name}`}{' '}
+                    (לחצו להחלפה)
                   </div>
                 </div>
               ) : (
                 <div style={{ padding: '1.25rem 0' }}>
-                  <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>📸</div>
+                  <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>📸 🎬</div>
                   <div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#4ade80' }}>
-                    לחצו כאן לבחירת תמונה מהמכשיר או צילום במצלמה
+                    לחצו כאן לבחירת תמונה או סרטון וידאו מהמכשיר
                   </div>
                   <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.35rem' }}>
-                    תומך בכל סוגי התמונות (JPG, PNG, HEIC, ועוד)
+                    תומך בכל סוגי התמונות והסרטונים (JPG, PNG, HEIC, MP4, MOV ועוד)
                   </div>
                 </div>
               )}
@@ -584,7 +605,7 @@ export default function UserGreetingPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span className="loader" style={{ borderColor: 'rgba(255,255,255,0.3)', borderTopColor: '#fff' }} />
-                    <span>מעלה את הברכה והתמונה... {progress > 0 && `${Math.round(progress)}%`}</span>
+                    <span>מעלה לענן... {progress > 0 && `${Math.round(progress)}%`}</span>
                   </div>
                   {progress > 0 && (
                     <div className="progress-bar-wrap">
@@ -593,7 +614,7 @@ export default function UserGreetingPage() {
                   )}
                 </div>
               ) : (
-                '🌿 שליחת הברכה והתמונה ללוח היישוב'
+                '🌿 שליחת הברכה והקובץ ללוח היישוב'
               )}
             </button>
           </form>
@@ -602,7 +623,7 @@ export default function UserGreetingPage() {
           <div className="animate-fade-in">
             <div className="success-banner">
               <div className="success-badge-icon">🍯🍎</div>
-              <h2 className="success-title">הברכה והתמונה התקבלו בהצלחה!</h2>
+              <h2 className="success-title">הברכה נקלטה בהצלחה!</h2>
               <p className="success-sub">
                 האיחול שלכם שודר ונוסף למסך ההקרנה וגלריית הברכות של תמרת.
               </p>
@@ -610,11 +631,23 @@ export default function UserGreetingPage() {
               {/* Postcard preview */}
               {uploadedItem && (
                 <div className="postcard-box">
-                  <img
-                    src={uploadedItem.url}
-                    alt="התמונה שהועלתה"
-                    className="postcard-img"
-                  />
+                  {uploadedItem.url.match(/\.(mp4|webm|ogg|mov|m4v)$/i) ? (
+                    <video
+                      src={uploadedItem.url}
+                      controls
+                      autoPlay
+                      muted
+                      playsInline
+                      className="postcard-img"
+                      style={{ maxHeight: '280px', width: '100%', objectFit: 'contain', background: '#000' }}
+                    />
+                  ) : (
+                    <img
+                      src={uploadedItem.url}
+                      alt="הקובץ שהועלה"
+                      className="postcard-img"
+                    />
+                  )}
                   <div className="postcard-content">
                     <div className="postcard-greeting">
                       "{uploadedItem.greeting}"

@@ -41,6 +41,7 @@ export default function AdminPage() {
   const [videoMsg, setVideoMsg] = useState('');
   const videoFileInputRef = useRef<HTMLInputElement>(null);
   const directVideoFileInputRef = useRef<HTMLInputElement>(null);
+  const standaloneVideoInputRef = useRef<HTMLInputElement>(null);
   const [directUploadingUrl, setDirectUploadingUrl] = useState<string | null>(null);
   const [targetItemForDirectUpload, setTargetItemForDirectUpload] = useState<string | null>(null);
 
@@ -250,6 +251,43 @@ export default function AdminPage() {
       fileInputRef.current.value = '';
     }
     fetchImages(password);
+  };
+
+  const handleUploadStandaloneVideo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsBulkUploading(true);
+    setUploadProgress({ current: 0, total: 1 });
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('firstName', 'קהילת');
+      formData.append('lastName', 'תמרת');
+      formData.append('greeting', 'סרטון קהילת תמרת 🎬 שנה טובה ומבורכת!');
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'שגיאה בהעלאת קובץ הווידאו');
+      }
+
+      setUploadProgress({ current: 1, total: 1 });
+      alert('✅ סרטון הווידאו הועלה בהצלחה למסך ההקרנה ולגלריה!');
+    } catch (err: any) {
+      alert('⚠️ ' + (err?.message || 'שגיאה בהעלאת הווידאו'));
+    } finally {
+      setIsBulkUploading(false);
+      if (standaloneVideoInputRef.current) {
+        standaloneVideoInputRef.current.value = '';
+      }
+      fetchImages(password);
+    }
   };
 
   const moveItem = (index: number, direction: 'up' | 'down') => {
@@ -524,13 +562,28 @@ export default function AdminPage() {
 
         {/* Action buttons */}
         <div className="admin-tools">
+          {/* Global Hidden File Inputs */}
           <input
             type="file"
-            accept="image/*,video/*"
+            accept="image/*,video/*,.mp4,.mov,.webm,.m4v"
             multiple
             style={{ display: 'none' }}
             ref={fileInputRef}
             onChange={handleBulkUpload}
+          />
+          <input
+            type="file"
+            accept="video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
+            style={{ display: 'none' }}
+            ref={standaloneVideoInputRef}
+            onChange={handleUploadStandaloneVideo}
+          />
+          <input
+            type="file"
+            ref={directVideoFileInputRef}
+            accept="video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
+            style={{ display: 'none' }}
+            onChange={handleDirectFileSelected}
           />
 
           <a
@@ -587,7 +640,22 @@ export default function AdminPage() {
             className="btn-secondary"
             disabled={isBulkUploading}
           >
-            {isBulkUploading ? `מעלה ${uploadProgress.current}/${uploadProgress.total}...` : '📤 העלאה מרוכזת'}
+            {isBulkUploading ? `מעלה ${uploadProgress.current}/${uploadProgress.total}...` : '📤 העלאת תמונות וסרטונים'}
+          </button>
+
+          <button
+            onClick={() => standaloneVideoInputRef.current?.click()}
+            className="btn-secondary"
+            disabled={isBulkUploading}
+            style={{
+              background: '#f0fdf4',
+              borderColor: '#16a34a',
+              color: '#15803d',
+              fontWeight: 700,
+            }}
+            title="העלאת סרטון וידאו חדש מהמכשיר ישירות למסך ההקרנה"
+          >
+            🎬 העלאת סרטון חדש למסך
           </button>
 
           {isReorderMode ? (
@@ -1166,18 +1234,11 @@ export default function AdminPage() {
                   </div>
                 )}
 
-                {/* Hidden video file inputs */}
-                <input
-                  type="file"
-                  ref={directVideoFileInputRef}
-                  accept="video/mp4,video/webm,video/quicktime,video/*"
-                  style={{ display: 'none' }}
-                  onChange={handleDirectFileSelected}
-                />
+                {/* Modal video file input */}
                 <input
                   type="file"
                   ref={videoFileInputRef}
-                  accept="video/*"
+                  accept="video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
                   style={{ display: 'none' }}
                   onChange={(e) => {
                     const file = e.target.files?.[0];
