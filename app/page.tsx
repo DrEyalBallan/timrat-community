@@ -385,7 +385,7 @@ export default function UserGreetingPage() {
             }}
           >
             <span>📺</span>
-            <span>למסך ההקרנה</span>
+            <span>למסך ההקרנה והגלריה</span>
           </a>
         </div>
 
@@ -703,27 +703,6 @@ export default function UserGreetingPage() {
           </div>
         )}
 
-        {/* Footer Navigation */}
-        <div
-          style={{
-            marginTop: '2rem',
-            paddingTop: '1.25rem',
-            borderTop: '1px solid rgba(255, 255, 255, 0.12)',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            fontSize: '0.95rem',
-            color: '#94a3b8',
-          }}
-        >
-          <a
-            href="/gallery"
-            style={{ color: '#4ade80', textDecoration: 'none', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-          >
-            <span>📺</span>
-            <span>למעבר לגלריית הצפייה וההקרנה בלייב</span>
-          </a>
-        </div>
       </div>
 
       {/* "My Uploads" Full Management Modal */}
