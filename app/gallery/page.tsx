@@ -261,15 +261,35 @@ export default function FullscreenGalleryPage() {
     } catch {}
   };
 
-  // Poll for updates every 3 seconds
+  // Poll for updates: every 15s when tab is visible, pause when hidden to save credits
   useEffect(() => {
     fetchImages();
     fetchSettings();
+
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       fetchImages();
+    }, 15000);
+
+    const settingsInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       fetchSettings();
-    }, 3000);
-    return () => clearInterval(interval);
+    }, 60000);
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        fetchImages();
+        fetchSettings();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      clearInterval(settingsInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   // Slideshow auto-advance timer

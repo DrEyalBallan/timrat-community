@@ -105,10 +105,24 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!isAuthenticated || !password || isReorderMode) return;
+
     const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
       fetchImages(password, true);
-    }, 5000);
-    return () => clearInterval(interval);
+    }, 20000);
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        fetchImages(password, true);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [isAuthenticated, password, isReorderMode]);
 
   const fetchImages = async (pass: string, silent = false) => {
