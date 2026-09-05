@@ -445,7 +445,7 @@ export default function UserGreetingPage() {
         <div className="instruction-box">
           <span className="instruction-icon">📂</span>
           <div className="instruction-text">
-            העלו תמונה וכתבו ברכה לשנה החדשה שקשורה לתמונה
+            העלו תמונה וכתבו ברכה לשנה החדשה שקשורה לתמונה וסטודיו NUTZEK AI יצור לכם סרטונים
           </div>
         </div>
 
@@ -706,15 +706,16 @@ export default function UserGreetingPage() {
           </div>
         )}
 
-        {/* Footer Navigation */}
+        {/* Footer Navigation & Nutzek Credits */}
         <div
           style={{
             marginTop: '2rem',
             paddingTop: '1.25rem',
             borderTop: '1px solid rgba(255, 255, 255, 0.12)',
             display: 'flex',
-            justifyContent: 'center',
+            flexDirection: 'column',
             alignItems: 'center',
+            gap: '1.25rem',
           }}
         >
           <a
@@ -737,6 +738,46 @@ export default function UserGreetingPage() {
             <span>📺</span>
             <span>למעבר לגלריית הצפייה ומסך ההקרנה בלייב</span>
           </a>
+
+          {/* Nutzek Logo & Link */}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '0.45rem',
+              paddingTop: '0.25rem',
+            }}
+          >
+            <span style={{ fontSize: '0.78rem', color: '#94a3b8', letterSpacing: '0.5px' }}>
+              בשיתוף והפקת
+            </span>
+            <a
+              href="https://www.nutzek.com/nfc"
+              target="_blank"
+              rel="noopener noreferrer"
+              title="מעבר לאתר NUTZEK"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '4px 8px',
+                borderRadius: '8px',
+                transition: 'transform 0.2s ease, opacity 0.2s ease',
+              }}
+            >
+              <img
+                src="/nutzek-logo.png"
+                alt="NUTZEK Productions"
+                style={{
+                  height: '42px',
+                  width: 'auto',
+                  objectFit: 'contain',
+                  filter: 'drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5))',
+                }}
+              />
+            </a>
+          </div>
         </div>
       </div>
 
