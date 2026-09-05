@@ -745,11 +745,11 @@ export default function UserGreetingPage() {
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              gap: '0.45rem',
-              paddingTop: '0.25rem',
+              gap: '0.5rem',
+              paddingTop: '0.5rem',
             }}
           >
-            <span style={{ fontSize: '0.78rem', color: '#94a3b8', letterSpacing: '0.5px' }}>
+            <span style={{ fontSize: '0.85rem', color: '#94a3b8', letterSpacing: '0.5px' }}>
               בשיתוף והפקת
             </span>
             <a
@@ -761,8 +761,8 @@ export default function UserGreetingPage() {
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                padding: '4px 8px',
-                borderRadius: '8px',
+                padding: '6px 12px',
+                borderRadius: '10px',
                 transition: 'transform 0.2s ease, opacity 0.2s ease',
               }}
             >
@@ -770,10 +770,11 @@ export default function UserGreetingPage() {
                 src="/nutzek-logo.png"
                 alt="NUTZEK Productions"
                 style={{
-                  height: '42px',
+                  height: '84px',
                   width: 'auto',
+                  maxWidth: '280px',
                   objectFit: 'contain',
-                  filter: 'drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5))',
+                  filter: 'drop-shadow(0 4px 12px rgba(0, 0, 0, 0.55))',
                 }}
               />
             </a>
