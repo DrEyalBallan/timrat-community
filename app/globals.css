@@ -1907,5 +1907,109 @@ textarea.modern-input {
   }
 }
 
+/* Nutzek Logo Blinking Invitation Arrows */
+@keyframes blinkArrowInwardRight {
+  0%, 100% {
+    opacity: 0.35;
+    transform: translateX(0) scale(0.95);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(-6px) scale(1.18);
+    filter: drop-shadow(0 0 10px rgba(74, 222, 128, 0.9));
+  }
+}
+
+@keyframes blinkArrowInwardLeft {
+  0%, 100% {
+    opacity: 0.35;
+    transform: translateX(0) scale(0.95);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(6px) scale(1.18);
+    filter: drop-shadow(0 0 10px rgba(74, 222, 128, 0.9));
+  }
+}
+
+@keyframes nutzekPulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(74, 222, 128, 0);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+  50% {
+    box-shadow: 0 0 20px 2px rgba(74, 222, 128, 0.25);
+    border-color: rgba(74, 222, 128, 0.5);
+  }
+}
+
+.nutzek-banner-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  padding: 8px 18px;
+  border-radius: 20px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  text-decoration: none;
+  transition: all 0.25s ease;
+  animation: nutzekPulseGlow 2.5s infinite ease-in-out;
+  cursor: pointer;
+}
+
+.nutzek-banner-link:hover {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(74, 222, 128, 0.6);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 25px rgba(34, 197, 94, 0.3);
+}
+
+.nutzek-arrow-r {
+  font-size: 2rem;
+  color: #4ade80;
+  display: inline-block;
+  user-select: none;
+  animation: blinkArrowInwardRight 1.2s infinite ease-in-out;
+  line-height: 1;
+}
+
+.nutzek-arrow-l {
+  font-size: 2rem;
+  color: #4ade80;
+  display: inline-block;
+  user-select: none;
+  animation: blinkArrowInwardLeft 1.2s infinite ease-in-out;
+  line-height: 1;
+}
+
+.nutzek-logo-img {
+  height: 84px;
+  width: auto;
+  max-width: 260px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.6));
+  transition: transform 0.25s ease;
+}
+
+.nutzek-banner-link:hover .nutzek-logo-img {
+  transform: scale(1.04);
+}
+
+@media (max-width: 640px) {
+  .nutzek-banner-link {
+    gap: 0.5rem;
+    padding: 6px 12px;
+  }
+  .nutzek-arrow-r,
+  .nutzek-arrow-l {
+    font-size: 1.5rem;
+  }
+  .nutzek-logo-img {
+    height: 68px;
+    max-width: 200px;
+  }
+}
+
 
 

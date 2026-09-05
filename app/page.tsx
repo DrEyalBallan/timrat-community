@@ -739,7 +739,7 @@ export default function UserGreetingPage() {
             <span>למעבר לגלריית הצפייה ומסך ההקרנה בלייב</span>
           </a>
 
-          {/* Nutzek Logo & Link */}
+          {/* Nutzek Logo & Link with Blinking Invitation Arrows */}
           <div
             style={{
               display: 'flex',
@@ -756,28 +756,20 @@ export default function UserGreetingPage() {
               href="https://www.nutzek.com/nfc"
               target="_blank"
               rel="noopener noreferrer"
-              title="מעבר לאתר NUTZEK"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '6px 12px',
-                borderRadius: '10px',
-                transition: 'transform 0.2s ease, opacity 0.2s ease',
-              }}
+              title="מעבר לאתר NUTZEK – לחצו כאן"
+              className="nutzek-banner-link"
             >
+              <span className="nutzek-arrow-r" aria-hidden="true">👈</span>
               <img
                 src="/nutzek-logo.png"
                 alt="NUTZEK Productions"
-                style={{
-                  height: '84px',
-                  width: 'auto',
-                  maxWidth: '280px',
-                  objectFit: 'contain',
-                  filter: 'drop-shadow(0 4px 12px rgba(0, 0, 0, 0.55))',
-                }}
+                className="nutzek-logo-img"
               />
+              <span className="nutzek-arrow-l" aria-hidden="true">👉</span>
             </a>
+            <span style={{ fontSize: '0.78rem', color: '#4ade80', fontWeight: 600, opacity: 0.9 }}>
+              ✨ לחצו לפרטים נוספים ✨
+            </span>
           </div>
         </div>
       </div>
