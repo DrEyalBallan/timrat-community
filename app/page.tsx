@@ -116,18 +116,21 @@ export default function UserGreetingPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setSelectedFile(file);
     const isVid = isMediaVideo(file.name) || file.type.startsWith('video/');
     if (isVid) {
-      const objUrl = URL.createObjectURL(file);
-      setFilePreview(objUrl);
-    } else {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setFilePreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      setErrorMessage('⚠️ העלאת סרטוני וידאו מוגבלת למנהל המערכת בלבד. תושבים מוזמנים להעלות תמונת ברכה.');
+      setSelectedFile(null);
+      setFilePreview(null);
+      if (e.target) e.target.value = '';
+      return;
     }
+
+    setSelectedFile(file);
+    const reader = new FileReader();
+    reader.onload = () => {
+      setFilePreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
     setErrorMessage('');
   };
 
@@ -151,7 +154,11 @@ export default function UserGreetingPage() {
       return;
     }
     if (!selectedFile) {
-      setErrorMessage('נא לבחור תמונה או סרטון להעלאה');
+      setErrorMessage('נא לבחור תמונת ברכה להעלאה');
+      return;
+    }
+    if (isMediaVideo(selectedFile.name) || selectedFile.type?.startsWith('video/')) {
+      setErrorMessage('⚠️ העלאת סרטוני וידאו מוגבלת למנהל המערכת בלבד. תושבים מוזמנים להעלות תמונת ברכה.');
       return;
     }
 
@@ -526,41 +533,26 @@ export default function UserGreetingPage() {
             >
               <input
                 type="file"
-                accept="image/*,video/*,.mp4,.mov,.webm,.m4v,.jpeg,.jpg,.png,.heic"
+                accept="image/*,.jpeg,.jpg,.png,.webp,.heic,.heif"
                 style={{ display: 'none' }}
                 disabled={isUploading}
                 onChange={handleSelectFile}
               />
               {filePreview ? (
                 <div className="preview-container">
-                  {selectedFile && (isMediaVideo(selectedFile.name) || selectedFile.type?.startsWith('video/')) ? (
-                    <video
-                      src={filePreview}
-                      controls
-                      autoPlay
-                      muted
-                      playsInline
-                      className="preview-img"
-                      style={{ maxHeight: '280px', width: '100%', objectFit: 'contain', background: '#000', borderRadius: '12px' }}
-                    />
-                  ) : (
-                    <img src={filePreview} alt="תצוגה מקדימה" className="preview-img" />
-                  )}
+                  <img src={filePreview} alt="תצוגה מקדימה" className="preview-img" />
                   <div className="preview-badge">
-                    {selectedFile && (isMediaVideo(selectedFile.name) || selectedFile.type?.startsWith('video/'))
-                      ? `🎬 נבחר סרטון וידאו: ${selectedFile?.name}`
-                      : `📷 נבחרה תמונה: ${selectedFile?.name}`}{' '}
-                    (לחצו להחלפה)
+                    📷 נבחרה תמונה: {selectedFile?.name} (לחצו להחלפה)
                   </div>
                 </div>
               ) : (
                 <div style={{ padding: '1.25rem 0' }}>
-                  <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>📸 🎬</div>
+                  <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>📸</div>
                   <div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#4ade80' }}>
-                    לחצו כאן לבחירת תמונה או סרטון וידאו מהמכשיר
+                    לחצו כאן לבחירת תמונת ברכה מהמכשיר
                   </div>
                   <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.35rem' }}>
-                    תומך בכל סוגי התמונות והסרטונים (JPG, PNG, HEIC, MP4, MOV ועוד)
+                    תומך בכל סוגי התמונות (JPG, PNG, HEIC)
                   </div>
                 </div>
               )}

@@ -6,6 +6,7 @@ export interface UploadOptions {
   lastName?: string;
   greeting?: string;
   token?: string;
+  adminPassword?: string;
   onProgress?: (percent: number) => void;
 }
 
@@ -21,7 +22,7 @@ export interface UploadResult {
  * Falls back to standard FormData /api/upload if signature fails.
  */
 export async function uploadMediaWithProgress(options: UploadOptions): Promise<UploadResult> {
-  const { file, firstName = "", lastName = "", greeting = "", token = "", onProgress } = options;
+  const { file, firstName = "", lastName = "", greeting = "", token = "", adminPassword = "", onProgress } = options;
 
   // 1. Try Direct Signed Upload to Cloudinary
   try {
@@ -97,6 +98,7 @@ export async function uploadMediaWithProgress(options: UploadOptions): Promise<U
             lastName,
             greeting,
             token,
+            adminPassword,
           }),
         });
 
@@ -120,6 +122,7 @@ export async function uploadMediaWithProgress(options: UploadOptions): Promise<U
   formData.append("lastName", lastName);
   formData.append("greeting", greeting);
   formData.append("token", token);
+  if (adminPassword) formData.append("adminPassword", adminPassword);
 
   const fallbackRes = await fetch("/api/upload", {
     method: "POST",

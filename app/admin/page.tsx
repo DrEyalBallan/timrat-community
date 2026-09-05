@@ -338,6 +338,7 @@ export default function AdminPage() {
         firstName: fName,
         lastName: lName,
         greeting: greet,
+        adminPassword: password,
       });
 
       alert('✅ הקובץ והברכה הועלו בהצלחה למסך ההקרנה ולגלריה!');

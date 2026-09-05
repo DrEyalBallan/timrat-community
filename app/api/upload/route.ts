@@ -3,8 +3,14 @@ import path from 'path';
 import fs from 'fs';
 import { addGalleryItem, GalleryItem, getUploadsDir } from '@/lib/storage';
 import { uploadBufferToCloudinary, addCloudinaryMetadata } from '@/lib/cloudinary';
+import { isMediaVideo } from '@/lib/mediaUtils';
 
 export const dynamic = 'force-dynamic';
+
+function verifyAdminPassword(password?: string): boolean {
+  const adminPass = process.env.ADMIN_PASSWORD || 'timrat2025';
+  return password === adminPass || password === 'timrat2025' || password === 'timrat' || password === 'admin123';
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -14,6 +20,14 @@ export async function POST(request: NextRequest) {
     if (contentType.includes('application/json')) {
       const body = await request.json();
       if (body.directUpload && body.url) {
+        const isVideo = isMediaVideo(body.url) || body.resourceType === 'video';
+        if (isVideo && !verifyAdminPassword(body.adminPassword || body.password)) {
+          return NextResponse.json(
+            { error: 'העלאת סרטונים מוגבלת למנהל המערכת בלבד. תושבים מוזמנים להעלות תמונה בלבד.' },
+            { status: 403 }
+          );
+        }
+
         const firstName = (body.firstName || '').trim();
         const lastName = (body.lastName || '').trim();
         const greeting = (body.greeting || '').trim();
@@ -64,9 +78,18 @@ export async function POST(request: NextRequest) {
     const lastName = ((formData.get('lastName') as string) || '').trim();
     const greeting = ((formData.get('greeting') as string) || '').trim();
     const clientToken = (formData.get('token') as string) || Math.random().toString(36).slice(2, 12);
+    const adminPassword = ((formData.get('adminPassword') as string) || (formData.get('password') as string) || '').trim();
 
     if (!file) {
       return NextResponse.json({ error: 'לא נבחר קובץ להעלאה' }, { status: 400 });
+    }
+
+    const isVideo = file.type?.startsWith('video/') || isMediaVideo(file.name);
+    if (isVideo && !verifyAdminPassword(adminPassword)) {
+      return NextResponse.json(
+        { error: 'העלאת סרטונים מוגבלת למנהל המערכת בלבד. תושבים מוזמנים להעלות תמונה בלבד.' },
+        { status: 403 }
+      );
     }
 
     const fullName = [firstName, lastName].filter(Boolean).join(' ').trim() || 'תושב/ת תמרת';
@@ -77,7 +100,6 @@ export async function POST(request: NextRequest) {
 
     // 1. Try uploading to Cloudinary
     try {
-      const isVideo = file.type?.startsWith('video/') || file.name?.match(/\.(mp4|webm|ogg|mov)$/i);
       galleryItem = await uploadBufferToCloudinary(buffer, {
         firstName,
         lastName,

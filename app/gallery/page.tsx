@@ -30,7 +30,9 @@ export default function FullscreenGalleryPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUiVisible, setIsUiVisible] = useState(false);
   const [activeAiVideoUrl, setActiveAiVideoUrl] = useState<string | null>(null);
+  const [aiVideoPlayCount, setAiVideoPlayCount] = useState(0);
   const [wasPlayingBeforeVideo, setWasPlayingBeforeVideo] = useState(true);
+  const videoPlayerRef = useRef<HTMLVideoElement | null>(null);
 
   // User's own uploads
   const [myUploads, setMyUploads] = useState<MyUploadItem[]>([]);
@@ -46,14 +48,27 @@ export default function FullscreenGalleryPage() {
     setWasPlayingBeforeVideo(isPlaying);
     setIsPlaying(false);
     setActiveAiVideoUrl(videoUrl);
+    setAiVideoPlayCount((prev) => prev + 1);
   };
 
   const closeAiVideo = () => {
+    if (videoPlayerRef.current) {
+      try {
+        videoPlayerRef.current.pause();
+      } catch {}
+    }
     setActiveAiVideoUrl(null);
     if (wasPlayingBeforeVideo) {
       setIsPlaying(true);
     }
   };
+
+  useEffect(() => {
+    if (activeAiVideoUrl && videoPlayerRef.current) {
+      videoPlayerRef.current.currentTime = 0;
+      videoPlayerRef.current.play().catch(() => {});
+    }
+  }, [activeAiVideoUrl, aiVideoPlayCount]);
 
   // Sync user's own uploads from localStorage and server
   useEffect(() => {
@@ -387,11 +402,16 @@ export default function FullscreenGalleryPage() {
               <div className="slide-media-content">
                 {isVideo ? (
                   <video
+                    key={`slide-video-${activeItem.url}-${currentIndex}`}
                     src={activeItem.url}
                     autoPlay
                     muted
                     loop
                     playsInline
+                    onEnded={(e) => {
+                      e.currentTarget.currentTime = 0;
+                      e.currentTarget.play().catch(() => {});
+                    }}
                     className="slide-img"
                   />
                 ) : (
@@ -420,7 +440,7 @@ export default function FullscreenGalleryPage() {
                   </div>
                 </div>
 
-                {/* AI Video Button on Slide */}
+                {/* AI Video Button on Slide (Single Button) */}
                 {activeItem.aiVideoUrl && (
                   <div style={{ marginTop: '0.65rem', borderTop: '1px dashed rgba(255, 255, 255, 0.2)', paddingTop: '0.55rem' }}>
                     <button
@@ -430,7 +450,7 @@ export default function FullscreenGalleryPage() {
                         openAiVideo(activeItem.aiVideoUrl!);
                       }}
                       className="slide-ai-video-btn"
-                      title="לחצו לצפייה בסרטון AI"
+                      title="לחצו לצפייה בסרטון"
                     >
                       <span className="ai-sparkle-icon">✨</span>
                       <span className="ai-btn-title">סרטון AI</span>
@@ -439,23 +459,6 @@ export default function FullscreenGalleryPage() {
                   </div>
                 )}
               </div>
-
-              {/* Dedicated Floating AI Video Button on the Side of the Screen / Image */}
-              {activeItem.aiVideoUrl && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openAiVideo(activeItem.aiVideoUrl!);
-                  }}
-                  className="gallery-side-ai-btn animate-fade-in"
-                  title="לחצו לצפייה בסרטון AI של תמונה זו"
-                >
-                  <span className="ai-side-sparkle">✨</span>
-                  <span className="ai-side-title">סרטון AI</span>
-                  <span className="ai-side-play">▶</span>
-                </button>
-              )}
 
               {/* Top Left: Back to upload button + Slide Counter Badge */}
               <div className="gallery-top-left-bar">
@@ -592,27 +595,62 @@ export default function FullscreenGalleryPage() {
             </button>
             <div className="ai-video-player-container">
               <video
+                key={`modal-video-${activeAiVideoUrl}-${aiVideoPlayCount}`}
+                ref={videoPlayerRef}
                 src={activeAiVideoUrl}
                 controls
                 autoPlay
                 playsInline
                 loop
+                onEnded={(e) => {
+                  const v = e.currentTarget;
+                  v.currentTime = 0;
+                  v.play().catch(() => {});
+                }}
                 className="ai-video-screen"
               />
             </div>
             <div className="ai-video-modal-bar">
               <div className="ai-modal-badge">
                 <span className="ai-sparkle-icon">✨</span>
-                <span>סרטון AI – קהילת תמרת</span>
+                <span>סרטון וידאו – קהילת תמרת</span>
               </div>
-              <button
-                type="button"
-                onClick={closeAiVideo}
-                className="btn-primary"
-                style={{ padding: '6px 16px', fontSize: '0.9rem', borderRadius: '20px' }}
-              >
-                חזרה למצגת ⤶
-              </button>
+              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (videoPlayerRef.current) {
+                      videoPlayerRef.current.currentTime = 0;
+                      videoPlayerRef.current.play().catch(() => {});
+                    }
+                  }}
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.15)',
+                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                    color: '#fff',
+                    padding: '6px 14px',
+                    borderRadius: '20px',
+                    fontSize: '0.88rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                  title="נגן את הסרטון שוב מההתחלה"
+                >
+                  <span>🔁</span>
+                  <span>נגן שוב מההתחלה</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={closeAiVideo}
+                  className="btn-primary"
+                  style={{ padding: '6px 16px', fontSize: '0.9rem', borderRadius: '20px' }}
+                >
+                  חזרה למצגת ⤶
+                </button>
+              </div>
             </div>
           </div>
         </div>
