@@ -379,13 +379,16 @@ export default function UserGreetingPage() {
             href="/gallery"
             className="my-uploads-trigger-btn"
             style={{
-              borderColor: 'rgba(255, 255, 255, 0.2)',
-              color: '#e2e8f0',
+              borderColor: 'rgba(74, 222, 128, 0.5)',
+              background: 'rgba(34, 197, 94, 0.15)',
+              color: '#4ade80',
+              fontWeight: 800,
               textDecoration: 'none',
+              boxShadow: '0 2px 8px rgba(34, 197, 94, 0.2)',
             }}
           >
             <span>📺</span>
-            <span>למסך ההקרנה והגלריה</span>
+            <span>מעבר לגלריה והקרנה</span>
           </a>
         </div>
 
@@ -703,6 +706,38 @@ export default function UserGreetingPage() {
           </div>
         )}
 
+        {/* Footer Navigation */}
+        <div
+          style={{
+            marginTop: '2rem',
+            paddingTop: '1.25rem',
+            borderTop: '1px solid rgba(255, 255, 255, 0.12)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+        >
+          <a
+            href="/gallery"
+            style={{
+              color: '#4ade80',
+              textDecoration: 'none',
+              fontWeight: 800,
+              fontSize: '1rem',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 22px',
+              borderRadius: '12px',
+              background: 'rgba(34, 197, 94, 0.15)',
+              border: '1.5px solid rgba(74, 222, 128, 0.4)',
+              boxShadow: '0 3px 10px rgba(34, 197, 94, 0.15)',
+            }}
+          >
+            <span>📺</span>
+            <span>למעבר לגלריית הצפייה ומסך ההקרנה בלייב</span>
+          </a>
+        </div>
       </div>
 
       {/* "My Uploads" Full Management Modal */}
