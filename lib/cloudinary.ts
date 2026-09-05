@@ -1,5 +1,6 @@
 import { v2 as cloudinary } from 'cloudinary';
 import { GalleryItem } from './storage';
+import { cleanMediaUrl } from './mediaUtils';
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'dp4uagtq9',
@@ -120,12 +121,16 @@ export async function fetchAllCloudinaryGalleryItems(): Promise<GalleryItem[]> {
       const fullName = [firstName, lastName].filter(Boolean).join(' ').trim() || 'תושב/ת תמרת';
       const time = parseInt(ctx.time || '0', 10) || new Date(res.created_at).getTime();
 
-      let aiVideoUrl = ctx.ai_video_url || '';
-      if (!aiVideoUrl && ctx.ai_video_b64) {
+      let aiVideoUrl = '';
+      if (ctx.ai_video_b64) {
         try {
           aiVideoUrl = Buffer.from(ctx.ai_video_b64, 'base64').toString('utf-8');
         } catch {}
       }
+      if (!aiVideoUrl && ctx.ai_video_url) {
+        aiVideoUrl = ctx.ai_video_url;
+      }
+      aiVideoUrl = cleanMediaUrl(aiVideoUrl);
 
       return {
         id: res.asset_id || res.public_id,
@@ -175,8 +180,9 @@ export async function uploadAiVideoToCloudinary(buffer: Buffer): Promise<string>
 export async function updateCloudinaryItemAiVideo(publicId: string, aiVideoUrl?: string): Promise<void> {
   try {
     if (aiVideoUrl) {
-      const b64 = Buffer.from(aiVideoUrl, 'utf-8').toString('base64');
-      await cloudinary.uploader.add_context(`ai_video_b64=${b64}|ai_video_url=${encodeURIComponent(aiVideoUrl)}`, [publicId]);
+      const cleanUrl = cleanMediaUrl(aiVideoUrl);
+      const b64 = Buffer.from(cleanUrl, 'utf-8').toString('base64');
+      await cloudinary.uploader.add_context(`ai_video_b64=${b64}|ai_video_url=${encodeURIComponent(cleanUrl)}`, [publicId]);
     } else {
       await cloudinary.uploader.add_context('ai_video_b64=|ai_video_url=', [publicId]);
     }

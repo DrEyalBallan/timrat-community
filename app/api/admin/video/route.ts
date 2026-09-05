@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { attachAiVideoToItem, removeAiVideoFromItem, getGalleryItems, getUploadsDir } from '@/lib/storage';
 import { uploadAiVideoToCloudinary, updateCloudinaryItemAiVideo } from '@/lib/cloudinary';
+import { cleanMediaUrl } from '@/lib/mediaUtils';
 
 export const dynamic = 'force-dynamic';
 
@@ -97,6 +98,8 @@ export async function POST(request: NextRequest) {
     if (!videoUrl) {
       return NextResponse.json({ error: 'לא נבחר קובץ וידאו ולא הוזן קישור תקין' }, { status: 400 });
     }
+
+    videoUrl = cleanMediaUrl(videoUrl);
 
     let lastUpdatedItem = null;
     for (const tUrl of targetUrls) {

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { isMediaVideo } from '@/lib/mediaUtils';
+import { isMediaVideo, cleanMediaUrl } from '@/lib/mediaUtils';
 
 interface ImageItem {
   id: string;
@@ -31,6 +31,8 @@ export default function FullscreenGalleryPage() {
   const [isUiVisible, setIsUiVisible] = useState(false);
   const [activeAiVideoUrl, setActiveAiVideoUrl] = useState<string | null>(null);
   const [aiVideoPlayCount, setAiVideoPlayCount] = useState(0);
+  const [isVideoMuted, setIsVideoMuted] = useState(false);
+  const [isVideoPlaying, setIsVideoPlaying] = useState(true);
   const [wasPlayingBeforeVideo, setWasPlayingBeforeVideo] = useState(true);
   const videoPlayerRef = useRef<HTMLVideoElement | null>(null);
 
@@ -45,10 +47,12 @@ export default function FullscreenGalleryPage() {
   const hideUiTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const openAiVideo = (videoUrl: string) => {
+    const safeUrl = cleanMediaUrl(videoUrl);
     setWasPlayingBeforeVideo(isPlaying);
     setIsPlaying(false);
-    setActiveAiVideoUrl(videoUrl);
+    setActiveAiVideoUrl(safeUrl);
     setAiVideoPlayCount((prev) => prev + 1);
+    setIsVideoPlaying(true);
   };
 
   const closeAiVideo = () => {
@@ -63,10 +67,50 @@ export default function FullscreenGalleryPage() {
     }
   };
 
+  const toggleVideoMute = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (videoPlayerRef.current) {
+      const nextMuted = !videoPlayerRef.current.muted;
+      videoPlayerRef.current.muted = nextMuted;
+      setIsVideoMuted(nextMuted);
+    }
+  };
+
+  const toggleVideoPlay = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (videoPlayerRef.current) {
+      if (videoPlayerRef.current.paused) {
+        videoPlayerRef.current.play().then(() => setIsVideoPlaying(true)).catch(() => {});
+      } else {
+        videoPlayerRef.current.pause();
+        setIsVideoPlaying(false);
+      }
+    }
+  };
+
   useEffect(() => {
     if (activeAiVideoUrl && videoPlayerRef.current) {
-      videoPlayerRef.current.currentTime = 0;
-      videoPlayerRef.current.play().catch(() => {});
+      const vid = videoPlayerRef.current;
+      vid.currentTime = 0;
+      const playPromise = vid.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            setIsVideoPlaying(true);
+          })
+          .catch((err) => {
+            console.warn('Unmuted autoplay blocked, retrying muted:', err);
+            vid.muted = true;
+            setIsVideoMuted(true);
+            vid.play()
+              .then(() => {
+                setIsVideoPlaying(true);
+              })
+              .catch(() => {
+                setIsVideoPlaying(false);
+              });
+          });
+      }
     }
   }, [activeAiVideoUrl, aiVideoPlayCount]);
 
@@ -593,15 +637,22 @@ export default function FullscreenGalleryPage() {
             >
               ✕
             </button>
-            <div className="ai-video-player-container">
+            <div
+              className="ai-video-player-container"
+              style={{ position: 'relative', cursor: 'pointer' }}
+              onClick={toggleVideoPlay}
+            >
               <video
-                key={`modal-video-${activeAiVideoUrl}-${aiVideoPlayCount}`}
+                key={`modal-video-${cleanMediaUrl(activeAiVideoUrl)}-${aiVideoPlayCount}`}
                 ref={videoPlayerRef}
-                src={activeAiVideoUrl}
+                src={cleanMediaUrl(activeAiVideoUrl)}
                 controls
                 autoPlay
                 playsInline
                 loop
+                muted={isVideoMuted}
+                onPlay={() => setIsVideoPlaying(true)}
+                onPause={() => setIsVideoPlaying(false)}
                 onEnded={(e) => {
                   const v = e.currentTarget;
                   v.currentTime = 0;
@@ -609,19 +660,64 @@ export default function FullscreenGalleryPage() {
                 }}
                 className="ai-video-screen"
               />
+              {!isVideoPlaying && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    width: '74px',
+                    height: '74px',
+                    borderRadius: '50%',
+                    background: 'rgba(0, 0, 0, 0.75)',
+                    border: '2.5px solid rgba(255, 255, 255, 0.85)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '2.2rem',
+                    color: '#ffffff',
+                    pointerEvents: 'none',
+                    boxShadow: '0 8px 30px rgba(0,0,0,0.6)',
+                  }}
+                >
+                  ▶
+                </div>
+              )}
             </div>
             <div className="ai-video-modal-bar">
               <div className="ai-modal-badge">
                 <span className="ai-sparkle-icon">✨</span>
                 <span>סרטון וידאו – קהילת תמרת</span>
               </div>
-              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={toggleVideoMute}
+                  style={{
+                    background: isVideoMuted ? '#f59e0b' : 'rgba(255, 255, 255, 0.15)',
+                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                    color: isVideoMuted ? '#000' : '#fff',
+                    padding: '6px 14px',
+                    borderRadius: '20px',
+                    fontSize: '0.88rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                  title={isVideoMuted ? 'הפעל סאונד' : 'השתק סאונד'}
+                >
+                  <span>{isVideoMuted ? '🔇 הפעל קול' : '🔊 קול פעיל'}</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
                     if (videoPlayerRef.current) {
                       videoPlayerRef.current.currentTime = 0;
-                      videoPlayerRef.current.play().catch(() => {});
+                      videoPlayerRef.current.play().then(() => setIsVideoPlaying(true)).catch(() => {});
                     }
                   }}
                   style={{
@@ -640,8 +736,9 @@ export default function FullscreenGalleryPage() {
                   title="נגן את הסרטון שוב מההתחלה"
                 >
                   <span>🔁</span>
-                  <span>נגן שוב מההתחלה</span>
+                  <span>נגן שוב</span>
                 </button>
+
                 <button
                   type="button"
                   onClick={closeAiVideo}

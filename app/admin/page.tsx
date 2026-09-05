@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { uploadMediaWithProgress, uploadVideoToCloudinary } from '@/lib/clientUpload';
-import { isMediaVideo } from '@/lib/mediaUtils';
+import { isMediaVideo, cleanMediaUrl } from '@/lib/mediaUtils';
 
 interface ImageItem {
   id: string;
@@ -117,7 +117,12 @@ export default function AdminPage() {
       const res = await fetch('/api/images', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        const incoming = (data.images || []).filter((img: ImageItem) => !deletedUrlsRef.current.has(img.url));
+        const incoming = (data.images || [])
+          .filter((img: ImageItem) => !deletedUrlsRef.current.has(img.url))
+          .map((img: ImageItem) => ({
+            ...img,
+            aiVideoUrl: img.aiVideoUrl ? cleanMediaUrl(img.aiVideoUrl) : undefined,
+          }));
         setImages(incoming);
       }
     } catch (err) {
@@ -1639,9 +1644,14 @@ export default function AdminPage() {
                   <div>
                     <div style={{ width: '100%', maxHeight: '260px', borderRadius: '12px', overflow: 'hidden', background: '#000', marginBottom: '0.75rem' }}>
                       <video
-                        src={activeModalItem.aiVideoUrl}
+                        src={cleanMediaUrl(activeModalItem.aiVideoUrl)}
                         controls
                         playsInline
+                        loop
+                        onEnded={(e) => {
+                          e.currentTarget.currentTime = 0;
+                          e.currentTarget.play().catch(() => {});
+                        }}
                         style={{ width: '100%', maxHeight: '260px', objectFit: 'contain' }}
                       />
                     </div>

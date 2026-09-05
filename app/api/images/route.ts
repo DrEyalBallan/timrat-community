@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getGalleryItems } from '@/lib/storage';
+import { cleanMediaUrl } from '@/lib/mediaUtils';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +15,7 @@ export async function GET() {
       fullName: item.fullName || [item.firstName, item.lastName].filter(Boolean).join(' ') || 'תושב/ת תמרת',
       greeting: item.greeting || '',
       time: item.time,
-      aiVideoUrl: item.aiVideoUrl || undefined,
+      aiVideoUrl: item.aiVideoUrl ? cleanMediaUrl(item.aiVideoUrl) : undefined,
     }));
 
     return NextResponse.json(
