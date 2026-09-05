@@ -569,47 +569,32 @@ export default function FullscreenGalleryPage() {
                   ❮
                 </button>
 
-                {/* Bottom discreet action pills (Play/Pause, Fullscreen) */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    bottom: '1.5rem',
-                    left: '2rem',
-                    zIndex: 30,
-                    display: 'flex',
-                    gap: '0.5rem',
-                  }}
-                >
+                {/* Action Controls (Play/Pause, Fullscreen) - placed at top-right to never overlap greeting card or AI video */}
+                <div className="gallery-action-controls">
                   <button
-                    onClick={() => setIsPlaying(!isPlaying)}
-                    style={{
-                      background: 'rgba(15, 23, 42, 0.75)',
-                      color: '#fff',
-                      border: '1px solid rgba(255,255,255,0.2)',
-                      padding: '6px 12px',
-                      borderRadius: '8px',
-                      fontSize: '0.85rem',
-                      cursor: 'pointer',
-                      backdropFilter: 'blur(8px)',
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsPlaying(!isPlaying);
                     }}
+                    className="gallery-control-btn"
+                    title={isPlaying ? 'השהיית המצגת' : 'המשך ניגון'}
                   >
-                    {isPlaying ? '⏸️ השהה' : '▶️ נגן'}
+                    <span>{isPlaying ? '⏸️' : '▶️'}</span>
+                    <span>{isPlaying ? 'השהה' : 'נגן'}</span>
                   </button>
 
                   <button
-                    onClick={toggleFullscreen}
-                    style={{
-                      background: 'rgba(15, 23, 42, 0.75)',
-                      color: '#fff',
-                      border: '1px solid rgba(255,255,255,0.2)',
-                      padding: '6px 12px',
-                      borderRadius: '8px',
-                      fontSize: '0.85rem',
-                      cursor: 'pointer',
-                      backdropFilter: 'blur(8px)',
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleFullscreen();
                     }}
+                    className="gallery-control-btn"
+                    title="מסך מלא"
                   >
-                    ⛶ מסך מלא
+                    <span>⛶</span>
+                    <span>מסך מלא</span>
                   </button>
                 </div>
               </div>
