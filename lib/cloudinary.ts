@@ -192,19 +192,20 @@ export async function updateCloudinaryItemAiVideo(publicId: string, aiVideoUrl?:
 }
 
 export async function deleteFromCloudinary(publicIds: string[]): Promise<void> {
+  if (!publicIds || publicIds.length === 0) return;
   try {
-    if (publicIds.length > 0) {
-      // 1. Untag immediately so queries by tag never return deleted placeholders
-      try {
-        await cloudinary.uploader.remove_tag('timrat_new_year', publicIds);
-      } catch (e) {
-        console.warn('Could not remove tag from Cloudinary items:', e);
-      }
+    // 1. Untag immediately so tag queries never return deleted items
+    await Promise.all([
+      cloudinary.uploader.remove_tag('timrat_new_year', publicIds, { resource_type: 'image' }).catch(() => null),
+      cloudinary.uploader.remove_tag('timrat_new_year', publicIds, { resource_type: 'video' }).catch(() => null),
+      cloudinary.uploader.remove_tag('timrat_ai_video', publicIds, { resource_type: 'video' }).catch(() => null),
+    ]);
 
-      // 2. Delete both image and video resources from Cloudinary
-      await cloudinary.api.delete_resources(publicIds, { resource_type: 'image' }).catch(() => null);
-      await cloudinary.api.delete_resources(publicIds, { resource_type: 'video' }).catch(() => null);
-    }
+    // 2. Delete permanently from Cloudinary with CDN cache invalidation
+    await Promise.all([
+      cloudinary.api.delete_resources(publicIds, { resource_type: 'image', invalidate: true }).catch(() => null),
+      cloudinary.api.delete_resources(publicIds, { resource_type: 'video', invalidate: true }).catch(() => null),
+    ]);
   } catch (err) {
     console.warn('Error deleting resources from Cloudinary:', err);
   }

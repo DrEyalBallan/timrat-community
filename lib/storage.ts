@@ -2,7 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { fetchAllCloudinaryGalleryItems, deleteFromCloudinary } from './cloudinary';
-export { isMediaVideo } from './mediaUtils';
+import { isMediaVideo, cleanMediaUrl } from './mediaUtils';
+export { isMediaVideo, cleanMediaUrl };
 
 export interface GalleryItem {
   id: string;
@@ -74,6 +75,7 @@ export function getDeletedFilePath(): string {
     if (!fs.existsSync(localDir)) {
       fs.mkdirSync(localDir, { recursive: true });
     }
+    fs.accessSync(localDir, fs.constants.W_OK);
     return localFile;
   } catch {
     const tmpDir = path.join(os.tmpdir(), 'timrat-data');
@@ -111,13 +113,20 @@ export function isItemDeleted(item: { url?: string; id?: string; filename?: stri
     deletedIdentifiers = loadDeletedBlacklist();
   }
   if (!item) return false;
+  const cleanUrl = item.url ? cleanMediaUrl(item.url) : '';
   if (item.url && deletedIdentifiers.has(item.url)) return true;
+  if (cleanUrl && deletedIdentifiers.has(cleanUrl)) return true;
   if (item.id && deletedIdentifiers.has(item.id)) return true;
   if (item.filename && deletedIdentifiers.has(item.filename)) return true;
 
-  if (item.url) {
+  if (item.url || cleanUrl) {
     const isMatched = Array.from(deletedIdentifiers).some(
-      (delId) => Boolean(delId && delId.startsWith('timrat-community/') && item.url!.includes(delId))
+      (delId) =>
+        Boolean(
+          delId &&
+            (delId.startsWith('timrat-community/') || delId.includes('timrat')) &&
+            ((item.url && item.url.includes(delId)) || (cleanUrl && cleanUrl.includes(delId)))
+        )
     );
     if (isMatched) return true;
   }
@@ -204,6 +213,7 @@ export async function addGalleryItem(item: GalleryItem): Promise<void> {
     if (item.id) deletedIdentifiers.delete(item.id);
     saveDeletedBlacklist(deletedIdentifiers);
   }
+  lastCloudinaryFetch = 0;
   const items = await getGalleryItems();
   const updated = [item, ...items.filter((i) => i.url !== item.url)];
   await saveGalleryItems(updated);
@@ -213,7 +223,8 @@ export async function deleteGalleryItemsByUrls(urls: string[]): Promise<string[]
   const items = await getGalleryItems();
   const deletedUrls: string[] = [];
   const remaining: GalleryItem[] = [];
-  const urlSet = new Set(urls);
+  const rawSet = new Set(urls);
+  const cleanInputUrls = new Set(urls.map((u) => cleanMediaUrl(u)));
   const uploadsDir = getUploadsDir();
   const cloudinaryIdsToDelete: string[] = [];
 
@@ -224,28 +235,46 @@ export async function deleteGalleryItemsByUrls(urls: string[]): Promise<string[]
   // Add all input URLs to blacklist and extract Cloudinary IDs directly
   for (const u of urls) {
     deletedIdentifiers.add(u);
-    if (u.includes('timrat-community/')) {
-      const match = u.match(/timrat-community\/[a-zA-Z0-9_-]+/);
-      if (match && !cloudinaryIdsToDelete.includes(match[0])) {
-        cloudinaryIdsToDelete.push(match[0]);
+    const cleanU = cleanMediaUrl(u);
+    deletedIdentifiers.add(cleanU);
+    if (cleanU.includes('timrat-community/')) {
+      const match = cleanU.match(/timrat-community\/[a-zA-Z0-9_\-\.]+/);
+      if (match) {
+        const idNoExt = match[0].replace(/\.[^/.]+$/, '');
+        if (!cloudinaryIdsToDelete.includes(idNoExt)) {
+          cloudinaryIdsToDelete.push(idNoExt);
+        }
       }
     }
   }
 
   for (const item of items) {
-    if (urlSet.has(item.url) || isItemDeleted(item)) {
+    const cleanItemUrl = cleanMediaUrl(item.url);
+    const isTarget =
+      rawSet.has(item.url) ||
+      cleanInputUrls.has(cleanItemUrl) ||
+      cleanInputUrls.has(item.url) ||
+      (item.id && (rawSet.has(item.id) || cleanInputUrls.has(item.id))) ||
+      (item.filename && (rawSet.has(item.filename) || cleanInputUrls.has(item.filename))) ||
+      isItemDeleted(item);
+
+    if (isTarget) {
       deletedUrls.push(item.url);
       deletedIdentifiers.add(item.url);
+      deletedIdentifiers.add(cleanItemUrl);
       if (item.id) deletedIdentifiers.add(item.id);
 
-      if (item.filename && item.filename.startsWith('timrat-community/')) {
+      if (item.filename) {
         if (!cloudinaryIdsToDelete.includes(item.filename)) {
           cloudinaryIdsToDelete.push(item.filename);
         }
-      } else if (item.url.includes('timrat-community/')) {
-        const match = item.url.match(/timrat-community\/[a-zA-Z0-9_-]+/);
-        if (match && !cloudinaryIdsToDelete.includes(match[0])) {
-          cloudinaryIdsToDelete.push(match[0]);
+      } else if (cleanItemUrl.includes('timrat-community/')) {
+        const match = cleanItemUrl.match(/timrat-community\/[a-zA-Z0-9_\-\.]+/);
+        if (match) {
+          const idNoExt = match[0].replace(/\.[^/.]+$/, '');
+          if (!cloudinaryIdsToDelete.includes(idNoExt)) {
+            cloudinaryIdsToDelete.push(idNoExt);
+          }
         }
       } else if (item.filename) {
         const filePath = path.join(uploadsDir, item.filename);
@@ -259,11 +288,17 @@ export async function deleteGalleryItemsByUrls(urls: string[]): Promise<string[]
       }
 
       // Also clean up linked AI video in Cloudinary if present
-      if (item.aiVideoUrl && item.aiVideoUrl.includes('timrat-community/ai-videos/')) {
-        const vidMatch = item.aiVideoUrl.match(/timrat-community\/ai-videos\/[a-zA-Z0-9_-]+/);
-        if (vidMatch) {
-          cloudinaryIdsToDelete.push(vidMatch[0]);
-          deletedIdentifiers.add(vidMatch[0]);
+      if (item.aiVideoUrl) {
+        const cleanVid = cleanMediaUrl(item.aiVideoUrl);
+        if (cleanVid.includes('timrat-community/')) {
+          const vidMatch = cleanVid.match(/timrat-community\/[a-zA-Z0-9_\-\.]+/);
+          if (vidMatch) {
+            const vidIdNoExt = vidMatch[0].replace(/\.[^/.]+$/, '');
+            if (!cloudinaryIdsToDelete.includes(vidIdNoExt)) {
+              cloudinaryIdsToDelete.push(vidIdNoExt);
+            }
+            deletedIdentifiers.add(vidIdNoExt);
+          }
         }
       }
     } else {
@@ -280,6 +315,8 @@ export async function deleteGalleryItemsByUrls(urls: string[]): Promise<string[]
     await deleteFromCloudinary(cloudinaryIdsToDelete);
   }
 
+  // Invalidate cache immediately so deleted items are never returned from cache
+  lastCloudinaryFetch = 0;
   await saveGalleryItems(remaining);
   return deletedUrls;
 }
@@ -434,27 +471,41 @@ export async function reorderGalleryItems(orderUrls: string[]): Promise<void> {
 }
 
 export async function attachAiVideoToItem(imageUrl: string, videoUrl: string): Promise<GalleryItem | null> {
+  const cleanTarget = cleanMediaUrl(imageUrl);
+  const cleanVideo = cleanMediaUrl(videoUrl);
   const items = await getGalleryItems();
   let updatedItem: GalleryItem | null = null;
   const updatedList = items.map((item) => {
-    if (item.url === imageUrl || item.id === imageUrl) {
-      updatedItem = { ...item, aiVideoUrl: videoUrl };
+    if (
+      item.url === imageUrl ||
+      item.id === imageUrl ||
+      cleanMediaUrl(item.url) === cleanTarget ||
+      item.id === cleanTarget
+    ) {
+      updatedItem = { ...item, aiVideoUrl: cleanVideo };
       return updatedItem;
     }
     return item;
   });
 
   if (updatedItem) {
+    lastCloudinaryFetch = 0;
     await saveGalleryItems(updatedList);
   }
   return updatedItem;
 }
 
 export async function removeAiVideoFromItem(imageUrl: string): Promise<boolean> {
+  const cleanTarget = cleanMediaUrl(imageUrl);
   const items = await getGalleryItems();
   let found = false;
   const updatedList = items.map((item) => {
-    if (item.url === imageUrl || item.id === imageUrl) {
+    if (
+      item.url === imageUrl ||
+      item.id === imageUrl ||
+      cleanMediaUrl(item.url) === cleanTarget ||
+      item.id === cleanTarget
+    ) {
       found = true;
       const copy = { ...item };
       delete copy.aiVideoUrl;
@@ -464,6 +515,7 @@ export async function removeAiVideoFromItem(imageUrl: string): Promise<boolean> 
   });
 
   if (found) {
+    lastCloudinaryFetch = 0;
     await saveGalleryItems(updatedList);
   }
   return found;

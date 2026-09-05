@@ -1343,25 +1343,27 @@ textarea.modern-input {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 2rem;
+  padding: 1rem;
+  overflow-y: auto;
 }
 
 .modal-content {
   background: #0f172a;
   border: 1.5px solid rgba(255, 255, 255, 0.2);
-  border-radius: 24px;
+  border-radius: 20px;
   max-width: 900px;
   width: 100%;
-  max-height: 90vh;
-  overflow: hidden;
+  max-height: 92vh;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   position: relative;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
 }
 
 .modal-img-wrap {
   width: 100%;
-  max-height: 60vh;
+  max-height: 50vh;
   background: #020617;
   display: flex;
   align-items: center;
@@ -1370,7 +1372,7 @@ textarea.modern-input {
 
 .modal-img {
   max-width: 100%;
-  max-height: 60vh;
+  max-height: 50vh;
   object-fit: contain;
 }
 

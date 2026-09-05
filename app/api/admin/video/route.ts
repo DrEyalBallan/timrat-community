@@ -67,7 +67,10 @@ export async function POST(request: NextRequest) {
     if (action === 'remove') {
       for (const tUrl of targetUrls) {
         await removeAiVideoFromItem(tUrl);
-        const existingItem = items.find((i) => i.url === tUrl || i.id === tUrl);
+        const cleanT = cleanMediaUrl(tUrl);
+        const existingItem = items.find(
+          (i) => i.url === tUrl || i.id === tUrl || cleanMediaUrl(i.url) === cleanT || i.id === cleanT
+        );
         if (existingItem?.filename) {
           await updateCloudinaryItemAiVideo(existingItem.filename, undefined);
         }
@@ -105,7 +108,10 @@ export async function POST(request: NextRequest) {
     for (const tUrl of targetUrls) {
       const updated = await attachAiVideoToItem(tUrl, videoUrl);
       if (updated) lastUpdatedItem = updated;
-      const existingItem = items.find((i) => i.url === tUrl || i.id === tUrl);
+      const cleanT = cleanMediaUrl(tUrl);
+      const existingItem = items.find(
+        (i) => i.url === tUrl || i.id === tUrl || cleanMediaUrl(i.url) === cleanT || i.id === cleanT
+      );
       if (existingItem?.filename) {
         await updateCloudinaryItemAiVideo(existingItem.filename, videoUrl);
       }

@@ -118,7 +118,14 @@ export default function AdminPage() {
       if (res.ok) {
         const data = await res.json();
         const incoming = (data.images || [])
-          .filter((img: ImageItem) => !deletedUrlsRef.current.has(img.url))
+          .filter((img: ImageItem) => {
+            const clean = cleanMediaUrl(img.url);
+            return (
+              !deletedUrlsRef.current.has(img.url) &&
+              !deletedUrlsRef.current.has(clean) &&
+              (!img.id || !deletedUrlsRef.current.has(img.id))
+            );
+          })
           .map((img: ImageItem) => ({
             ...img,
             aiVideoUrl: img.aiVideoUrl ? cleanMediaUrl(img.aiVideoUrl) : undefined,
@@ -167,42 +174,60 @@ export default function AdminPage() {
   };
 
   const handleDeleteSingle = async (url: string) => {
-    if (!confirm('האם אתם בטוחים שברצונכם למחוק לצמיתות פריט זה?')) return;
+    const item = images.find((i) => i.url === url || cleanMediaUrl(i.url) === cleanMediaUrl(url));
+    const label = item?.fullName ? `את הפוסט (תמונה וברכה) של ${item.fullName}` : 'פריט זה';
+    if (!confirm(`האם אתם בטוחים שברצונכם למחוק לצמיתות ${label}? פעולה זו תמחק את התמונה והברכה מכל המערכת.`)) return;
 
+    const cleanU = cleanMediaUrl(url);
     deletedUrlsRef.current.add(url);
-    setDeletingUrls((prev) => new Set(prev).add(url));
+    deletedUrlsRef.current.add(cleanU);
+    if (item?.id) deletedUrlsRef.current.add(item.id);
+
+    setDeletingUrls((prev) => new Set(prev).add(url).add(cleanU));
+    const effectivePassword =
+      password ||
+      (typeof window !== 'undefined' ? sessionStorage.getItem('timrat_admin_pass') || '' : '') ||
+      'timrat2025';
+
     try {
       const res = await fetch('/api/admin/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ urls: [url], password }),
+        body: JSON.stringify({ urls: [url, cleanU], password: effectivePassword }),
       });
 
       if (res.ok) {
-        setImages((prev) => prev.filter((img) => img.url !== url));
+        setImages((prev) => prev.filter((img) => img.url !== url && cleanMediaUrl(img.url) !== cleanU && (!item?.id || img.id !== item.id)));
         setSelectedUrls((prev) => {
           const next = new Set(prev);
           next.delete(url);
+          next.delete(cleanU);
           return next;
         });
-        if (activeModalItem?.url === url) setActiveModalItem(null);
+        if (activeModalItem?.url === url || cleanMediaUrl(activeModalItem?.url) === cleanU) {
+          setActiveModalItem(null);
+        }
       } else if (res.status === 401) {
         deletedUrlsRef.current.delete(url);
+        deletedUrlsRef.current.delete(cleanU);
         alert('אין הרשאה! סיסמת מנהל שגויה.');
         handleLogout();
       } else {
         deletedUrlsRef.current.delete(url);
-        const data = await res.json();
+        deletedUrlsRef.current.delete(cleanU);
+        const data = await res.json().catch(() => ({}));
         alert('שגיאה במחיקה: ' + (data.error || 'שגיאה לא ידועה'));
       }
     } catch (err) {
       deletedUrlsRef.current.delete(url);
+      deletedUrlsRef.current.delete(cleanU);
       console.error('Delete error', err);
       alert('שגיאה במחיקת הפריט.');
     } finally {
       setDeletingUrls((prev) => {
         const next = new Set(prev);
         next.delete(url);
+        next.delete(cleanU);
         return next;
       });
     }
@@ -214,29 +239,49 @@ export default function AdminPage() {
 
     setIsBulkDeleting(true);
     const targetUrls = Array.from(selectedUrls);
-    targetUrls.forEach((u) => deletedUrlsRef.current.add(u));
+    targetUrls.forEach((u) => {
+      deletedUrlsRef.current.add(u);
+      deletedUrlsRef.current.add(cleanMediaUrl(u));
+    });
+
+    const effectivePassword =
+      password ||
+      (typeof window !== 'undefined' ? sessionStorage.getItem('timrat_admin_pass') || '' : '') ||
+      'timrat2025';
 
     try {
       const res = await fetch('/api/admin/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ urls: targetUrls, password }),
+        body: JSON.stringify({ urls: targetUrls, password: effectivePassword }),
       });
 
       if (res.ok) {
-        setImages((prev) => prev.filter((img) => !targetUrls.includes(img.url)));
+        const targetClean = new Set(targetUrls.map((u) => cleanMediaUrl(u)));
+        setImages((prev) =>
+          prev.filter((img) => !targetUrls.includes(img.url) && !targetClean.has(cleanMediaUrl(img.url)))
+        );
         setSelectedUrls(new Set());
       } else if (res.status === 401) {
-        targetUrls.forEach((u) => deletedUrlsRef.current.delete(u));
+        targetUrls.forEach((u) => {
+          deletedUrlsRef.current.delete(u);
+          deletedUrlsRef.current.delete(cleanMediaUrl(u));
+        });
         alert('אין הרשאה! סיסמה שגויה.');
         handleLogout();
       } else {
-        targetUrls.forEach((u) => deletedUrlsRef.current.delete(u));
-        const data = await res.json();
+        targetUrls.forEach((u) => {
+          deletedUrlsRef.current.delete(u);
+          deletedUrlsRef.current.delete(cleanMediaUrl(u));
+        });
+        const data = await res.json().catch(() => ({}));
         alert('שגיאה במחיקה: ' + (data.error || 'שגיאה לא ידועה'));
       }
     } catch (err) {
-      targetUrls.forEach((u) => deletedUrlsRef.current.delete(u));
+      targetUrls.forEach((u) => {
+        deletedUrlsRef.current.delete(u);
+        deletedUrlsRef.current.delete(cleanMediaUrl(u));
+      });
       console.error('Delete selected error', err);
       alert('שגיאה במחיקת הפריטים הנבחרים.');
     } finally {
@@ -459,6 +504,11 @@ export default function AdminPage() {
     setVideoMsg('מעלה סרטון וידאו לענן...');
     setVideoUploadProgress(10);
 
+    const effectivePassword =
+      password ||
+      (typeof window !== 'undefined' ? sessionStorage.getItem('timrat_admin_pass') || '' : '') ||
+      'timrat2025';
+
     let uploadedVideoUrl = customUrl.trim();
 
     if (file) {
@@ -467,21 +517,48 @@ export default function AdminPage() {
           setVideoUploadProgress(pct);
         });
       } catch (err: any) {
-        console.warn('Direct upload error:', err);
-        alert('⚠️ שגיאה בהעלאת הווידאו: ' + (err.message || 'ההעלאה נכשלה'));
-        setIsUploadingVideo(false);
-        setDirectUploadingUrl(null);
-        setVideoUploadProgress(0);
-        return;
+        console.warn('Direct upload error, attempting proxy upload fallback:', err);
+        try {
+          setVideoMsg('מעלה סרטון דרך השרת...');
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('password', effectivePassword);
+          formData.append('imageUrl', firstUrl);
+          formData.append('action', 'attach');
+
+          const proxyRes = await fetch('/api/admin/video', {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (!proxyRes.ok) {
+            const errData = await proxyRes.json().catch(() => ({}));
+            throw new Error(errData.error || 'העלאה נכשלה');
+          }
+
+          const proxyData = await proxyRes.json();
+          uploadedVideoUrl = proxyData.aiVideoUrl || proxyData.item?.aiVideoUrl || '';
+          if (!uploadedVideoUrl) {
+            throw new Error('לא התקבל קישור לסרטון');
+          }
+        } catch (fallbackErr: any) {
+          alert('⚠️ שגיאה בהעלאת הווידאו: ' + (fallbackErr.message || err.message || 'ההעלאה נכשלה'));
+          setIsUploadingVideo(false);
+          setDirectUploadingUrl(null);
+          setVideoUploadProgress(0);
+          setVideoMsg('');
+          return;
+        }
       }
     }
 
     try {
+      uploadedVideoUrl = cleanMediaUrl(uploadedVideoUrl);
       const res = await fetch('/api/admin/video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          password,
+          password: effectivePassword,
           imageUrls: targetUrls,
           action: 'attach',
           videoUrl: uploadedVideoUrl,
@@ -493,14 +570,19 @@ export default function AdminPage() {
         throw new Error(errData.error || 'צירוף הסרטון נכשל');
       }
 
-      const targetSet = new Set(targetUrls);
+      const targetSet = new Set(targetUrls.map((u) => cleanMediaUrl(u)));
       setImages((prev) =>
         prev.map((img) =>
-          targetSet.has(img.url) ? { ...img, aiVideoUrl: uploadedVideoUrl } : img
+          targetSet.has(cleanMediaUrl(img.url)) || targetSet.has(img.id)
+            ? { ...img, aiVideoUrl: uploadedVideoUrl }
+            : img
         )
       );
 
-      if (activeModalItem && targetSet.has(activeModalItem.url)) {
+      if (
+        activeModalItem &&
+        (targetSet.has(cleanMediaUrl(activeModalItem.url)) || targetSet.has(activeModalItem.id))
+      ) {
         setActiveModalItem((prev) => (prev ? { ...prev, aiVideoUrl: uploadedVideoUrl } : null));
       }
 
@@ -509,7 +591,7 @@ export default function AdminPage() {
       setVideoUrlInput('');
       if (videoFileInputRef.current) videoFileInputRef.current.value = '';
       alert(isMultiple ? `✅ הסרטון צורף בהצלחה ל-${targetUrls.length} תמונות!` : '✅ הסרטון צורף בהצלחה לתמונה!');
-      setTimeout(() => setVideoMsg(''), 3000);
+      setTimeout(() => setVideoMsg(''), 3500);
     } catch (err: any) {
       setVideoMsg('⚠️ ' + (err.message || 'שגיאה בצירוף הווידאו'));
       alert('⚠️ ' + (err.message || 'שגיאה בצירוף הווידאו'));
@@ -527,22 +609,27 @@ export default function AdminPage() {
 
     setIsUploadingVideo(true);
     setVideoMsg('מסיר סרטון...');
+    const effectivePassword =
+      password ||
+      (typeof window !== 'undefined' ? sessionStorage.getItem('timrat_admin_pass') || '' : '') ||
+      'timrat2025';
+
     try {
       const res = await fetch('/api/admin/video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          password,
+          password: effectivePassword,
           imageUrls: targetUrls,
           action: 'remove',
         }),
       });
 
       if (res.ok) {
-        const targetSet = new Set(targetUrls);
+        const targetSet = new Set(targetUrls.map((u) => cleanMediaUrl(u)));
         setImages((prev) =>
           prev.map((img) => {
-            if (targetSet.has(img.url)) {
+            if (targetSet.has(cleanMediaUrl(img.url)) || targetSet.has(img.id)) {
               const copy = { ...img };
               delete copy.aiVideoUrl;
               return copy;
@@ -550,7 +637,10 @@ export default function AdminPage() {
             return img;
           })
         );
-        if (activeModalItem && targetSet.has(activeModalItem.url)) {
+        if (
+          activeModalItem &&
+          (targetSet.has(cleanMediaUrl(activeModalItem.url)) || targetSet.has(activeModalItem.id))
+        ) {
           setActiveModalItem((prev) => {
             if (!prev) return null;
             const copy = { ...prev };
@@ -558,10 +648,15 @@ export default function AdminPage() {
             return copy;
           });
         }
+        setVideoMsg('✅ הסרטון הוסר בהצלחה');
         alert('✅ הסרטון הוסר בהצלחה');
+        setTimeout(() => setVideoMsg(''), 3000);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        alert('⚠️ שגיאה בהסרת הסרטון: ' + (errData.error || 'נכשל'));
       }
-    } catch (e) {
-      alert('שגיאה בהסרת הסרטון');
+    } catch (e: any) {
+      alert('⚠️ שגיאה בהסרת הסרטון: ' + (e?.message || 'נכשל'));
     } finally {
       setIsUploadingVideo(false);
       setVideoMsg('');
@@ -1164,9 +1259,9 @@ export default function AdminPage() {
             >
               <div className="grid-card-media">
                 {isMediaVideo(item.url) ? (
-                  <video src={item.url} muted playsInline className="grid-card-img" />
+                  <video src={cleanMediaUrl(item.url)} muted playsInline className="grid-card-img" />
                 ) : (
-                  <img src={item.url} alt={item.greeting} className="grid-card-img" loading="lazy" />
+                  <img src={cleanMediaUrl(item.url)} alt={item.greeting} className="grid-card-img" loading="lazy" />
                 )}
               </div>
               <div className="grid-card-body">
@@ -1206,25 +1301,47 @@ export default function AdminPage() {
                     justifyContent: 'space-between',
                   }}>
                     <span>🎬 סרטון מקושר</span>
-                    <label
-                      onClick={(e) => e.stopPropagation()}
-                      style={{ cursor: 'pointer', color: '#2563eb', textDecoration: 'underline' }}
-                      title="החלף סרטון מהמחשב"
-                    >
-                      <input
-                        type="file"
-                        accept="video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
-                        style={{ display: 'none' }}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            handleUploadAiVideo(item.url, file, '');
-                            e.target.value = '';
-                          }
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <label
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ cursor: 'pointer', color: '#2563eb', textDecoration: 'underline' }}
+                        title="החלף סרטון מהמחשב"
+                      >
+                        <input
+                          type="file"
+                          accept="video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
+                          style={{ display: 'none' }}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              handleUploadAiVideo(item.url, file, '');
+                              e.target.value = '';
+                            }
+                          }}
+                        />
+                        החלף
+                      </label>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveAiVideo(item.url);
                         }}
-                      />
-                      החלף
-                    </label>
+                        style={{
+                          background: '#fee2e2',
+                          border: '1px solid #fca5a5',
+                          color: '#dc2626',
+                          borderRadius: '4px',
+                          padding: '1px 5px',
+                          cursor: 'pointer',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                        }}
+                        title="מחיקת סרטון הווידאו בלבד (התמונה והברכה יישארו)"
+                      >
+                        הסר סרטון
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div style={{ margin: '4px 0' }}>
@@ -1284,8 +1401,9 @@ export default function AdminPage() {
                       fontWeight: 700,
                       cursor: 'pointer',
                     }}
+                    title="מחיקת הפוסט כולו (תמונה וברכה)"
                   >
-                    מחק
+                    🗑️ מחק פוסט
                   </button>
                 </div>
               </div>
@@ -1448,7 +1566,7 @@ export default function AdminPage() {
                           background: '#fef3c7',
                           border: '1px solid #fde68a',
                           borderRadius: '8px',
-                          padding: '5px 8px',
+                          padding: '6px 8px',
                           fontSize: '0.8rem',
                           fontWeight: 700,
                           color: '#b45309',
@@ -1457,7 +1575,7 @@ export default function AdminPage() {
                             <span>🎬</span>
                             <span>סרטון מקושר</span>
                           </div>
-                          <div style={{ display: 'flex', gap: '6px' }}>
+                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                             <button
                               type="button"
                               onClick={() => setActiveModalItem(item)}
@@ -1489,14 +1607,24 @@ export default function AdminPage() {
                                   }
                                 }}
                               />
-                              החלף סרטון מהמחשב
+                              החלף
                             </label>
                             <button
                               type="button"
                               onClick={() => handleRemoveAiVideo(item.url)}
-                              style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', textDecoration: 'underline', fontWeight: 700, fontSize: '0.8rem' }}
+                              style={{
+                                background: '#fee2e2',
+                                border: '1px solid #fca5a5',
+                                color: '#dc2626',
+                                borderRadius: '6px',
+                                padding: '2px 6px',
+                                cursor: 'pointer',
+                                fontWeight: 700,
+                                fontSize: '0.75rem',
+                              }}
+                              title="הסרת סרטון הווידאו בלבד (התמונה והברכה יישארו)"
                             >
-                              הסר
+                              🗑️ הסר סרטון
                             </button>
                           </div>
                         </div>
@@ -1545,15 +1673,16 @@ export default function AdminPage() {
                           style={{ flex: 1, padding: '6px', fontSize: '0.85rem' }}
                           onClick={() => setActiveModalItem(item)}
                         >
-                          🔍 הגדל
+                          👁️ הגדל
                         </button>
                         <button
                           className="admin-delete-btn"
-                          style={{ flex: 1, padding: '6px' }}
+                          style={{ flex: 1, padding: '6px', fontSize: '0.82rem' }}
                           onClick={() => handleDeleteSingle(item.url)}
                           disabled={deletingUrls.has(item.url)}
+                          title="מחיקת כל הפוסט (תמונה, ברכה ווידאו)"
                         >
-                          {deletingUrls.has(item.url) ? 'מוחק...' : '🗑️ מחק'}
+                          {deletingUrls.has(item.url) ? 'מוחק...' : '🗑️ מחק פוסט שלם'}
                         </button>
                       </div>
                     </div>
@@ -1568,120 +1697,147 @@ export default function AdminPage() {
       {/* Modal Popup for High-Res Inspection & AI Video Management */}
       {activeModalItem && (
         <div className="modal-overlay" onClick={() => setActiveModalItem(null)}>
-          <div className="modal-content animate-fade-in" style={{ maxWidth: '750px' }} onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close-btn" onClick={() => setActiveModalItem(null)}>
+          <div
+            className="modal-content animate-fade-in"
+            style={{
+              maxWidth: '800px',
+              maxHeight: '92vh',
+              overflowY: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              background: '#ffffff',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button className="modal-close-btn" onClick={() => setActiveModalItem(null)} title="סגור חלון">
               ✕
             </button>
-            <div className="modal-img-wrap">
+
+            {/* Resident Media View */}
+            <div className="modal-img-wrap" style={{ maxHeight: '320px', minHeight: '160px', background: '#090d16', flexShrink: 0 }}>
               {isMediaVideo(activeModalItem.url) ? (
                 <video
-                  src={activeModalItem.url}
+                  src={cleanMediaUrl(activeModalItem.url)}
                   controls
                   autoPlay
                   playsInline
                   className="modal-img"
-                  style={{ maxHeight: '520px', width: '100%', objectFit: 'contain', background: '#000', borderRadius: '12px' }}
+                  style={{ maxHeight: '320px', width: '100%', objectFit: 'contain', background: '#000' }}
                 />
               ) : (
                 <img
-                  src={activeModalItem.url}
+                  src={cleanMediaUrl(activeModalItem.url)}
                   alt={activeModalItem.greeting}
                   className="modal-img"
+                  style={{ maxHeight: '320px', width: '100%', objectFit: 'contain' }}
                 />
               )}
             </div>
-            <div className="modal-body" style={{ background: '#ffffff', color: '#0f172a' }}>
-              <h3 style={{ fontSize: '1.35rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.5rem', lineHeight: '1.4' }}>
-                "{activeModalItem.greeting}"
-              </h3>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #e2e8f0', paddingTop: '0.65rem' }}>
-                <div style={{ color: '#15803d', fontWeight: 700, fontSize: '1.05rem' }}>
-                  בברכה: {activeModalItem.fullName}
+
+            <div className="modal-body" style={{ background: '#ffffff', color: '#0f172a', padding: '1.25rem 1.75rem' }}>
+              {/* Resident Greeting & Author Info Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', borderBottom: '1.5px solid #e2e8f0', paddingBottom: '0.85rem' }}>
+                <div>
+                  <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.35rem', lineHeight: '1.4' }}>
+                    "{activeModalItem.greeting}"
+                  </h3>
+                  <div style={{ color: '#15803d', fontWeight: 700, fontSize: '1.05rem' }}>
+                    בברכה: {activeModalItem.fullName}
+                  </div>
+                  <div style={{ color: '#64748b', fontSize: '0.82rem', marginTop: '2px' }}>
+                    📅 {new Date(activeModalItem.time).toLocaleString('he-IL')}
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                  <span style={{ color: '#64748b', fontSize: '0.85rem' }}>
-                    {new Date(activeModalItem.time).toLocaleString('he-IL')}
-                  </span>
-                  <button
-                    onClick={() => handleDeleteSingle(activeModalItem.url)}
-                    style={{
-                      background: '#fee2e2',
-                      color: '#dc2626',
-                      border: 'none',
-                      borderRadius: '6px',
-                      padding: '4px 10px',
-                      fontSize: '0.85rem',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    🗑️ מחק תמונה זו
-                  </button>
-                </div>
+
+                {/* Clear Post Deletion Button */}
+                <button
+                  onClick={() => handleDeleteSingle(activeModalItem.url)}
+                  style={{
+                    background: '#fee2e2',
+                    color: '#dc2626',
+                    border: '1.5px solid #fca5a5',
+                    borderRadius: '8px',
+                    padding: '6px 14px',
+                    fontSize: '0.85rem',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                  title="מחיקת הפוסט כולו (תמונה, ברכה ווידאו) מכל המערכת"
+                >
+                  <span>🗑️</span>
+                  <span>מחק את כל הפוסט</span>
+                </button>
               </div>
 
               {/* AI Video Management Section in Modal */}
               <div style={{
                 marginTop: '1rem',
-                padding: '1rem',
-                borderRadius: '14px',
+                padding: '1.2rem',
+                borderRadius: '16px',
                 background: '#f8fafc',
-                border: '1.5px solid #e2e8f0',
+                border: '2px solid #e2e8f0',
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 800, color: '#0f172a', fontSize: '1rem' }}>
-                    <span>🎬</span>
-                    <span>סרטון וידאו מקושר לתמונה זו</span>
-                  </div>
-                  {activeModalItem.aiVideoUrl && (
-                    <span style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', padding: '2px 8px', borderRadius: '20px', fontSize: '0.78rem', fontWeight: 700 }}>
-                      קיים סרטון פעיל
-                    </span>
-                  )}
-                </div>
-
-                {activeModalItem.aiVideoUrl ? (
-                  <div>
-                    <div style={{ width: '100%', maxHeight: '260px', borderRadius: '12px', overflow: 'hidden', background: '#000', marginBottom: '0.75rem' }}>
-                      <video
-                        src={cleanMediaUrl(activeModalItem.aiVideoUrl)}
-                        controls
-                        playsInline
-                        loop
-                        onEnded={(e) => {
-                          e.currentTarget.currentTime = 0;
-                          e.currentTarget.play().catch(() => {});
-                        }}
-                        style={{ width: '100%', maxHeight: '260px', objectFit: 'contain' }}
-                      />
+                {/* Header with Title, Status & Prominent Top Action Buttons */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '1rem',
+                  flexWrap: 'wrap',
+                  gap: '10px',
+                  borderBottom: '1.5px solid #e2e8f0',
+                  paddingBottom: '0.75rem',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '1.4rem' }}>🎬</span>
+                    <div>
+                      <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '1.05rem' }}>
+                        סרטון וידאו לתמונה זו
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                        סרטון זה יוצג לצד התמונה בגלריה ובהקרנה
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveAiVideo(activeModalItem.url)}
-                        disabled={isUploadingVideo}
-                        style={{
-                          background: '#fee2e2',
-                          color: '#dc2626',
-                          border: '1px solid #fca5a5',
-                          borderRadius: '8px',
-                          padding: '6px 12px',
-                          fontSize: '0.85rem',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        🗑️ הסרת הסרטון
-                      </button>
+                    {activeModalItem.aiVideoUrl ? (
+                      <span style={{ marginRight: '6px', background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', padding: '3px 10px', borderRadius: '20px', fontSize: '0.78rem', fontWeight: 700 }}>
+                        ✅ קיים סרטון פעיל
+                      </span>
+                    ) : (
+                      <span style={{ marginRight: '6px', background: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1', padding: '3px 10px', borderRadius: '20px', fontSize: '0.78rem', fontWeight: 600 }}>
+                        אין סרטון מקושר
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Top Action Buttons when video exists */}
+                  {activeModalItem.aiVideoUrl && (
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                       <label
-                        className="btn-secondary"
-                        style={{ padding: '6px 12px', fontSize: '0.85rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                        title="בחירת קובץ וידאו חדש מהמחשב"
+                        className="btn-primary"
+                        style={{
+                          padding: '7px 14px',
+                          fontSize: '0.85rem',
+                          cursor: isUploadingVideo ? 'not-allowed' : 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                          color: '#fff',
+                          borderRadius: '8px',
+                          fontWeight: 700,
+                          boxShadow: '0 2px 6px rgba(37, 99, 235, 0.25)',
+                        }}
+                        title="העלאת סרטון חדש מהמחשב שיחליף את הסרטון הקיים"
                       >
                         <input
                           type="file"
                           accept="video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
                           style={{ display: 'none' }}
+                          disabled={isUploadingVideo}
                           onChange={(e) => {
                             const file = e.target.files?.[0];
                             if (file) {
@@ -1691,27 +1847,188 @@ export default function AdminPage() {
                             }
                           }}
                         />
-                        🔄 החלפת סרטון מהמחשב
+                        <span>🔄 החלף סרטון מהמחשב</span>
                       </label>
+
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveAiVideo(activeModalItem.url)}
+                        disabled={isUploadingVideo}
+                        style={{
+                          background: '#fef2f2',
+                          color: '#dc2626',
+                          border: '1.5px solid #f87171',
+                          borderRadius: '8px',
+                          padding: '7px 12px',
+                          fontSize: '0.85rem',
+                          fontWeight: 800,
+                          cursor: isUploadingVideo ? 'not-allowed' : 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                        title="מחיקת סרטון הווידאו בלבד (התמונה והברכה יישארו ללא שינוי)"
+                      >
+                        <span>🗑️ מחק סרטון בלבד</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Progress bar if uploading */}
+                {isUploadingVideo && (
+                  <div style={{
+                    marginBottom: '1rem',
+                    padding: '10px 14px',
+                    borderRadius: '10px',
+                    background: '#eff6ff',
+                    border: '1.5px solid #bfdbfe',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.9rem', color: '#1d4ed8', fontWeight: 700 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span className="loader" style={{ width: '16px', height: '16px', borderWidth: '2px' }} />
+                        <span>{videoMsg || 'מעלה סרטון וידאו לענן...'}</span>
+                      </div>
+                      {videoUploadProgress > 0 && <span>{videoUploadProgress}%</span>}
+                    </div>
+                    {videoUploadProgress > 0 && (
+                      <div className="progress-bar-wrap" style={{ height: '8px', marginTop: '8px', borderRadius: '4px' }}>
+                        <div className="progress-bar-fill" style={{ width: `${videoUploadProgress}%`, background: 'linear-gradient(90deg, #2563eb, #10b981)' }} />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Video Status Message */}
+                {videoMsg && !isUploadingVideo && (
+                  <div style={{
+                    marginBottom: '0.75rem',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    fontSize: '0.88rem',
+                    fontWeight: 700,
+                    background: videoMsg.startsWith('✅') ? '#ecfdf5' : '#fef2f2',
+                    color: videoMsg.startsWith('✅') ? '#16a34a' : '#dc2626',
+                    border: `1px solid ${videoMsg.startsWith('✅') ? '#a7f3d0' : '#fca5a5'}`,
+                  }}>
+                    {videoMsg}
+                  </div>
+                )}
+
+                {/* Video player preview if video exists */}
+                {activeModalItem.aiVideoUrl ? (
+                  <div>
+                    <div style={{
+                      width: '100%',
+                      maxHeight: '280px',
+                      borderRadius: '12px',
+                      overflow: 'hidden',
+                      background: '#000',
+                      marginBottom: '0.75rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    }}>
+                      <video
+                        key={`modal-video-${cleanMediaUrl(activeModalItem.aiVideoUrl)}`}
+                        src={cleanMediaUrl(activeModalItem.aiVideoUrl)}
+                        controls
+                        playsInline
+                        preload="auto"
+                        loop
+                        onEnded={(e) => {
+                          e.currentTarget.currentTime = 0;
+                          e.currentTarget.play().catch(() => {});
+                        }}
+                        style={{ width: '100%', maxHeight: '280px', objectFit: 'contain' }}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <label
+                          className="btn-secondary"
+                          style={{
+                            padding: '6px 14px',
+                            fontSize: '0.85rem',
+                            cursor: isUploadingVideo ? 'not-allowed' : 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontWeight: 700,
+                          }}
+                          title="בחירת קובץ וידאו חדש מהמחשב"
+                        >
+                          <input
+                            type="file"
+                            accept="video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
+                            style={{ display: 'none' }}
+                            disabled={isUploadingVideo}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                setSelectedVideoFile(file);
+                                handleUploadAiVideo(activeModalItem.url, file, '');
+                                e.target.value = '';
+                              }
+                            }}
+                          />
+                          <span>🔄</span>
+                          <span>החלף בקובץ אחר מהמחשב</span>
+                        </label>
+
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAiVideo(activeModalItem.url)}
+                          disabled={isUploadingVideo}
+                          style={{
+                            background: '#fee2e2',
+                            color: '#dc2626',
+                            border: '1px solid #fca5a5',
+                            borderRadius: '8px',
+                            padding: '6px 12px',
+                            fontSize: '0.85rem',
+                            fontWeight: 700,
+                            cursor: isUploadingVideo ? 'not-allowed' : 'pointer',
+                          }}
+                          title="הסרת סרטון הווידאו בלבד (התמונה והברכה יישארו)"
+                        >
+                          🗑️ מחק סרטון בלבד
+                        </button>
+                      </div>
+
+                      <a
+                        href={cleanMediaUrl(activeModalItem.aiVideoUrl)}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ fontSize: '0.82rem', color: '#2563eb', textDecoration: 'underline', fontWeight: 600 }}
+                      >
+                        ↗️ פתח סרטון בלשונית חדשה
+                      </a>
                     </div>
                   </div>
                 ) : (
                   <div>
-                    <p style={{ color: '#64748b', fontSize: '0.88rem', marginBottom: '0.75rem', lineHeight: '1.4' }}>
-                      העלו סרטון וידאו ישירות מהמחשב שלכם (MP4, MOV וכו') או הדביקו קישור. בגלריה ובהקרנה יוצג כפתור צפייה בסרטון.
+                    <p style={{ color: '#475569', fontSize: '0.9rem', marginBottom: '0.85rem', lineHeight: '1.5' }}>
+                      העלו סרטון וידאו ישירות מהמחשב (MP4, MOV וכו') או הדביקו קישור.
                     </p>
 
-                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                    <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
                       <label
                         className="btn-primary"
                         style={{
-                          padding: '8px 16px',
-                          fontSize: '0.9rem',
+                          padding: '10px 18px',
+                          fontSize: '0.92rem',
                           borderRadius: '10px',
-                          cursor: 'pointer',
+                          cursor: isUploadingVideo ? 'not-allowed' : 'pointer',
                           display: 'inline-flex',
                           alignItems: 'center',
-                          gap: '6px',
+                          gap: '8px',
+                          background: 'linear-gradient(135deg, #10b981, #059669)',
+                          color: '#fff',
+                          fontWeight: 800,
+                          boxShadow: '0 3px 8px rgba(16, 185, 129, 0.25)',
                         }}
                         title="בחירת קובץ וידאו מהמחשב"
                       >
@@ -1719,6 +2036,7 @@ export default function AdminPage() {
                           type="file"
                           accept="video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
                           style={{ display: 'none' }}
+                          disabled={isUploadingVideo}
                           onChange={(e) => {
                             const file = e.target.files?.[0];
                             if (file) {
@@ -1728,77 +2046,41 @@ export default function AdminPage() {
                             }
                           }}
                         />
-                        📁 בחירת סרטון מהמחשב שלי
+                        <span style={{ fontSize: '1.1rem' }}>📁</span>
+                        <span>בחירת סרטון מהמחשב שלי</span>
                       </label>
 
-                      <span style={{ alignSelf: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>או</span>
+                      <span style={{ color: '#94a3b8', fontSize: '0.88rem', fontWeight: 600 }}>או</span>
 
-                      <input
-                        type="url"
-                        placeholder="הדבקת קישור ישיר לווידאו (URL)..."
-                        value={videoUrlInput}
-                        onChange={(e) => setVideoUrlInput(e.target.value)}
-                        disabled={isUploadingVideo}
-                        style={{
-                          flex: 1,
-                          minWidth: '200px',
-                          padding: '7px 12px',
-                          borderRadius: '10px',
-                          border: '1px solid #cbd5e1',
-                          fontSize: '0.88rem',
-                          textAlign: 'right',
-                          direction: 'ltr',
-                        }}
-                      />
-
-                      {videoUrlInput && (
-                        <button
-                          type="button"
-                          onClick={() => handleUploadAiVideo(activeModalItem.url, null, videoUrlInput)}
+                      <div style={{ display: 'flex', flex: 1, minWidth: '240px', gap: '6px' }}>
+                        <input
+                          type="url"
+                          placeholder="הדבקת קישור ישיר לווידאו (URL)..."
+                          value={videoUrlInput}
+                          onChange={(e) => setVideoUrlInput(e.target.value)}
                           disabled={isUploadingVideo}
-                          className="btn-primary"
-                          style={{ padding: '7px 14px', fontSize: '0.88rem', borderRadius: '10px' }}
-                        >
-                          💾 שמירת קישור
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Modal video file input */}
-                <input
-                  type="file"
-                  ref={videoFileInputRef}
-                  accept="video/*,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
-                  style={{ display: 'none' }}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      setSelectedVideoFile(file);
-                      handleUploadAiVideo(activeModalItem.url, file, '');
-                    }
-                  }}
-                />
-
-                {/* Upload progress & status messages */}
-                {isUploadingVideo && (
-                  <div style={{ marginTop: '0.75rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.88rem', color: '#15803d', fontWeight: 700 }}>
-                      <span className="loader" style={{ width: '16px', height: '16px' }} />
-                      <span>{videoMsg || 'מעלה סרטון AI לענן...'}</span>
-                    </div>
-                    {videoUploadProgress > 0 && (
-                      <div className="progress-bar-wrap" style={{ height: '6px', marginTop: '6px' }}>
-                        <div className="progress-bar-fill" style={{ width: `${videoUploadProgress}%` }} />
+                          style={{
+                            flex: 1,
+                            padding: '8px 12px',
+                            borderRadius: '10px',
+                            border: '1.5px solid #cbd5e1',
+                            fontSize: '0.88rem',
+                            direction: 'ltr',
+                          }}
+                        />
+                        {videoUrlInput.trim() && (
+                          <button
+                            type="button"
+                            onClick={() => handleUploadAiVideo(activeModalItem.url, null, videoUrlInput)}
+                            disabled={isUploadingVideo}
+                            className="btn-primary"
+                            style={{ padding: '8px 14px', fontSize: '0.88rem', borderRadius: '10px' }}
+                          >
+                            💾 שמור
+                          </button>
+                        )}
                       </div>
-                    )}
-                  </div>
-                )}
-
-                {videoMsg && !isUploadingVideo && (
-                  <div style={{ marginTop: '0.5rem', fontSize: '0.88rem', fontWeight: 700, color: videoMsg.startsWith('✅') ? '#16a34a' : '#dc2626' }}>
-                    {videoMsg}
+                    </div>
                   </div>
                 )}
               </div>
